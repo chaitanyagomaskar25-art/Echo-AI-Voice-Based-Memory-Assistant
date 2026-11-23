@@ -6,6 +6,7 @@ import conversationReducer from './slices/conversationSlice';
 import taskReducer from './slices/taskSlice';
 import reminderReducer from './slices/reminderSlice';
 import recapReducer from './slices/recapSlice';
+import offlineReducer from './slices/offlineSlice';
 import audioReducer from './slices/audioSlice';
 import uiReducer from './slices/uiSlice';
 
@@ -18,6 +19,7 @@ export const store = configureStore({
     tasks: taskReducer,
     reminders: reminderReducer,
     recap: recapReducer,
+    offline: offlineReducer,
     audio: audioReducer,
     ui: uiReducer,
   },

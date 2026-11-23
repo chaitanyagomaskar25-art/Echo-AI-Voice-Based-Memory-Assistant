@@ -22,6 +22,15 @@ export const memoryApi = {
   // Toggle pin
   togglePin: (id) => apiClient.patch(`/memories/${id}/pin`),
 
+  // Toggle favorite
+  toggleFavorite: (id) => apiClient.patch(`/memories/${id}/favorite`),
+
+  // Toggle archive
+  toggleArchive: (id) => apiClient.patch(`/memories/${id}/archive`),
+
+  // Get related tasks for a memory
+  getRelatedTasks: (id) => apiClient.get(`/memories/${id}/tasks`),
+
   // Toggle reminder
   toggleReminder: (id, reminderId) =>
     apiClient.patch(`/memories/${id}/reminders/${reminderId}/toggle`),

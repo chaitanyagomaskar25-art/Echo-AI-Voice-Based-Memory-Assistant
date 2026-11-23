@@ -24,6 +24,7 @@ import {
   completeReminder,
   cancelAndRemoveReminder,
 } from '../store/slices/reminderSlice';
+import { setSyncModalVisible, triggerManualSync } from '../store/slices/offlineSlice';
 import notificationService from '../services/notificationService';
 import statsApi from '../api/statsApi';
 import { API_BASE_URL } from '../config/env';
@@ -42,6 +43,12 @@ export const SettingsScreen = ({ navigation }) => {
   const { colors, isDark, setThemeMode } = useTheme();
   const currentUrl = useSelector((state) => state.ui.serverUrl) || API_BASE_URL;
   const user = useSelector((state) => state.auth.user);
+
+  // Offline sync state
+  const { isOnline, queue, pendingCount, failedCount, lastSyncedAt, isSyncing } = useSelector(
+    (state) => state.offline
+  );
+  const totalUnsynced = (queue || []).filter((i) => i.status !== 'synced').length;
 
   const [apiUrl, setApiUrl] = useState(currentUrl);
   const [checking, setChecking] = useState(false);
@@ -439,6 +446,145 @@ export const SettingsScreen = ({ navigation }) => {
                 Modern Light
               </Text>
             </TouchableOpacity>
+          </View>
+        </Card>
+
+        {/* Offline Storage & Cloud Synchronization */}
+        <Card style={styles.sectionCard}>
+          <View style={styles.sectionHeaderRow}>
+            <Ionicons
+              name={isOnline ? 'cloud-done-outline' : 'cloud-offline'}
+              size={18}
+              color={isOnline ? colors.emerald : '#F97316'}
+              style={{ marginRight: 8 }}
+            />
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+              Offline Storage & Cloud Sync
+            </Text>
+          </View>
+          <Text style={[styles.description, { color: colors.textSecondary }]}>
+            Echo stores voice recordings safely on your device when offline and automatically syncs to MongoDB when connectivity returns.
+          </Text>
+
+          {/* Network Connection Pill */}
+          <View style={[styles.permissionRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons
+                name={isOnline ? 'wifi' : 'cellular-outline'}
+                size={16}
+                color={isOnline ? colors.emerald : '#F97316'}
+                style={{ marginRight: 6 }}
+              />
+              <Text style={[styles.prefLabel, { color: colors.textPrimary }]}>Device Connection</Text>
+            </View>
+            <Badge
+              label={isOnline ? 'Online' : 'Offline Mode'}
+              variant={isOnline ? 'success' : 'warning'}
+              size="sm"
+            />
+          </View>
+
+          {/* Sync Stats Row */}
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+            <View
+              style={{
+                flex: 1,
+                padding: spacing.sm,
+                borderRadius: radius.md,
+                backgroundColor: colors.surface,
+                borderWidth: 1,
+                borderColor: colors.border,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontSize: typography.sizes.xs, color: colors.textSecondary, marginBottom: 2 }}>
+                Unsynced
+              </Text>
+              <Text
+                style={{
+                  fontSize: typography.sizes.lg,
+                  fontWeight: typography.weights.bold,
+                  color: totalUnsynced > 0 ? '#F97316' : colors.textPrimary,
+                }}
+              >
+                {totalUnsynced}
+              </Text>
+            </View>
+
+            <View
+              style={{
+                flex: 1,
+                padding: spacing.sm,
+                borderRadius: radius.md,
+                backgroundColor: colors.surface,
+                borderWidth: 1,
+                borderColor: colors.border,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontSize: typography.sizes.xs, color: colors.textSecondary, marginBottom: 2 }}>
+                Failed Retries
+              </Text>
+              <Text
+                style={{
+                  fontSize: typography.sizes.lg,
+                  fontWeight: typography.weights.bold,
+                  color: failedCount > 0 ? colors.recordRed : colors.textPrimary,
+                }}
+              >
+                {failedCount}
+              </Text>
+            </View>
+
+            <View
+              style={{
+                flex: 1.2,
+                padding: spacing.sm,
+                borderRadius: radius.md,
+                backgroundColor: colors.surface,
+                borderWidth: 1,
+                borderColor: colors.border,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontSize: typography.sizes.xs, color: colors.textSecondary, marginBottom: 2 }}>
+                Last Synced
+              </Text>
+              <Text
+                style={{
+                  fontSize: typography.sizes.xs,
+                  fontWeight: typography.weights.semibold,
+                  color: colors.primaryLight,
+                  marginTop: 2,
+                }}
+                numberOfLines={1}
+              >
+                {lastSyncedAt ? formatRelativeTime(lastSyncedAt) : 'Never'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Queue Actions */}
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+            <Button
+              title="Manage Queue"
+              variant="outline"
+              size="sm"
+              icon="layers-outline"
+              onPress={() => dispatch(setSyncModalVisible(true))}
+              style={{ flex: 1 }}
+            />
+            {totalUnsynced > 0 && isOnline && (
+              <Button
+                title={isSyncing ? 'Syncing...' : 'Sync Now'}
+                variant="primary"
+                size="sm"
+                icon="sync"
+                loading={isSyncing}
+                onPress={() => dispatch(triggerManualSync())}
+                style={{ flex: 1 }}
+              />
+            )}
           </View>
         </Card>
 

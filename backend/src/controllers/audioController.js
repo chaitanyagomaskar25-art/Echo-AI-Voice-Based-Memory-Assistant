@@ -26,7 +26,31 @@ exports.uploadAudio = async (req, res, next) => {
       language = 'en',
       duration,
       saveImmediately = 'true',
+      clientLocalId,
+      idempotencyKey,
     } = req.body;
+
+    const offlineKey = clientLocalId || idempotencyKey;
+
+    // Deduplication check: Avoid duplicate memories when syncing offline recordings
+    if (offlineKey) {
+      const existing = await Memory.findOne({ clientLocalId: offlineKey });
+      if (existing) {
+        return res.status(200).json({
+          success: true,
+          deduplicated: true,
+          message: 'Memory already synced from offline record.',
+          data: {
+            audioUrl: existing.audioUrl,
+            audioDuration: existing.audioDuration,
+            transcript: existing.transcript,
+            language: existing.language,
+            transcriptionStatus: existing.transcriptionStatus,
+            memory: existing,
+          },
+        });
+      }
+    }
 
     const audioUrl = `/uploads/${file.filename}`;
     const audioDuration = duration ? parseFloat(duration) : 0;
@@ -101,6 +125,7 @@ exports.uploadAudio = async (req, res, next) => {
         transcriptionError,
         language: transcriptionResult.language || language,
         transcriptionProvider: transcriptionResult.provider || 'whisper',
+        clientLocalId: offlineKey || null,
         user: req.user ? req.user._id : null,
       });
 

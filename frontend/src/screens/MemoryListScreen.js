@@ -7,19 +7,25 @@ import {
   RefreshControl,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import {
   fetchMemories,
+  fetchMoreMemories,
   semanticSearchMemories,
   togglePin,
+  toggleFavorite,
+  toggleArchive,
   deleteMemory,
   setSearchQuery,
   setSelectedCategory,
   setSearchMode,
   setDateFilter,
+  setActiveTab,
 } from '../store/slices/memorySlice';
 import MemoryCard from '../components/memory/MemoryCard';
 import SearchFilterBar from '../components/memory/SearchFilterBar';
@@ -28,28 +34,42 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import { useTheme } from '../theme/ThemeContext';
 import { spacing, radius } from '../theme/spacing';
 import typography from '../theme/typography';
+import { ROUTES } from '../navigation/routes';
 
 const DATE_OPTIONS = [
   { id: 'all', label: 'All Time' },
+  { id: 'today', label: 'Today' },
   { id: 'week', label: 'Past Week' },
   { id: 'month', label: 'Past Month' },
+];
+
+const TABS = [
+  { id: 'all', label: 'All Memories', icon: 'layers-outline' },
+  { id: 'favorites', label: 'Favorites', icon: 'star-outline' },
+  { id: 'archived', label: 'Archived', icon: 'archive-outline' },
 ];
 
 export const MemoryListScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch();
   const { colors, isDark } = useTheme();
+
   const {
     memories,
     loading,
+    loadingMore,
+    hasMore,
+    total,
     searchQuery,
     selectedCategory,
     searchMode,
     dateFilter,
+    activeTab,
   } = useSelector((state) => state.memory);
 
   const [onlyPinned, setOnlyPinned] = useState(false);
 
+  // Load memories from backend based on active filters and tabs
   const loadMemories = useCallback(() => {
     if (searchMode === 'semantic' && searchQuery && searchQuery.trim().length > 0) {
       dispatch(
@@ -60,27 +80,153 @@ export const MemoryListScreen = ({ navigation }) => {
         })
       );
     } else {
+      const isFav = activeTab === 'favorites' ? true : undefined;
+      const isArch = activeTab === 'archived' ? 'true' : 'false';
+
       dispatch(
         fetchMemories({
           search: searchQuery || undefined,
           category: selectedCategory !== 'All' ? selectedCategory : undefined,
+          dateFilter: dateFilter !== 'all' ? dateFilter : undefined,
+          isFavorite: isFav,
+          isArchived: isArch,
+          isPinned: onlyPinned ? true : undefined,
+          page: 1,
+          limit: 15,
         })
       );
     }
-  }, [dispatch, searchQuery, selectedCategory, searchMode, dateFilter]);
+  }, [dispatch, searchQuery, selectedCategory, searchMode, dateFilter, activeTab, onlyPinned]);
 
   useEffect(() => {
     loadMemories();
   }, [loadMemories]);
 
-  const filteredMemories = memories.filter((item) => {
-    if (onlyPinned && !item.isPinned) return false;
-    return true;
-  });
+  // Handle pagination on reaching end of list
+  const handleLoadMore = () => {
+    if (searchMode === 'semantic' && searchQuery.trim().length > 0) return;
+    if (hasMore && !loading && !loadingMore) {
+      const isFav = activeTab === 'favorites' ? true : undefined;
+      const isArch = activeTab === 'archived' ? 'true' : 'false';
+
+      dispatch(
+        fetchMoreMemories({
+          search: searchQuery || undefined,
+          category: selectedCategory !== 'All' ? selectedCategory : undefined,
+          dateFilter: dateFilter !== 'all' ? dateFilter : undefined,
+          isFavorite: isFav,
+          isArchived: isArch,
+          isPinned: onlyPinned ? true : undefined,
+          limit: 15,
+        })
+      );
+    }
+  };
+
+  const handleDelete = (id, title) => {
+    Alert.alert(
+      'Delete Memory',
+      `Permanently delete "${title || 'this memory'}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => dispatch(deleteMemory(id)),
+        },
+      ]
+    );
+  };
+
+  const getEmptyStateDetails = () => {
+    if (searchQuery.trim().length > 0) {
+      return {
+        icon: searchMode === 'semantic' ? 'sparkles-outline' : 'search-outline',
+        title: 'No matching memories',
+        description: `No memories match "${searchQuery}". Try adjusting your filters or search keywords.`,
+      };
+    }
+    if (activeTab === 'favorites') {
+      return {
+        icon: 'star-outline',
+        title: 'No favorite memories yet',
+        description: 'Tap the star icon on any memory card to bookmark your most important thoughts here.',
+      };
+    }
+    if (activeTab === 'archived') {
+      return {
+        icon: 'archive-outline',
+        title: 'Archive is empty',
+        description: 'Archived memories are stored safely out of your main library. You can restore them anytime.',
+      };
+    }
+    return {
+      icon: 'mic-outline',
+      title: 'No memories captured yet',
+      description: 'Record your first voice thought or text note to start building your personal memory vault.',
+    };
+  };
+
+  const emptyDetails = getEmptyStateDetails();
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Search and Category Filter Bar */}
+      {/* 1. Top Section Tabs: All Memories | Favorites | Archived */}
+      <View style={[styles.sectionTabsWrap, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        {TABS.map((tab) => {
+          const isSelected = activeTab === tab.id;
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              activeOpacity={0.8}
+              onPress={() => dispatch(setActiveTab(tab.id))}
+              style={[
+                styles.sectionTabBtn,
+                isSelected && {
+                  borderBottomColor: tab.id === 'favorites' ? '#EAB308' : colors.primaryLight,
+                  borderBottomWidth: 2,
+                },
+              ]}
+            >
+              <Ionicons
+                name={
+                  tab.id === 'favorites' && isSelected
+                    ? 'star'
+                    : tab.id === 'archived' && isSelected
+                    ? 'archive'
+                    : tab.icon
+                }
+                size={14}
+                color={
+                  isSelected
+                    ? tab.id === 'favorites'
+                      ? '#EAB308'
+                      : colors.primaryLight
+                    : colors.textSecondary
+                }
+                style={{ marginRight: 5 }}
+              />
+              <Text
+                style={[
+                  styles.sectionTabText,
+                  {
+                    color: isSelected
+                      ? tab.id === 'favorites'
+                        ? '#EAB308'
+                        : colors.primaryLight
+                      : colors.textSecondary,
+                  },
+                  isSelected && { fontWeight: typography.weights.bold },
+                ]}
+              >
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* 2. Search and Category Filter Bar */}
       <SearchFilterBar
         searchQuery={searchQuery}
         onSearchChange={(text) => dispatch(setSearchQuery(text))}
@@ -88,7 +234,7 @@ export const MemoryListScreen = ({ navigation }) => {
         onSelectCategory={(cat) => dispatch(setSelectedCategory(cat))}
       />
 
-      {/* Semantic / Keyword Search Mode & Date Filter Bar */}
+      {/* 3. Search Mode (Semantic / Keyword) & Date Filter Pills */}
       <View style={[styles.modeBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <View style={styles.modeToggleGroup}>
           <TouchableOpacity
@@ -185,11 +331,11 @@ export const MemoryListScreen = ({ navigation }) => {
         </ScrollView>
       </View>
 
-      {/* Sub-bar with count and filters */}
+      {/* 4. Sub-bar with count and Pinned Only filter */}
       <View style={styles.filterMetaRow}>
         <View style={styles.countBadgeRow}>
           <Text style={[styles.resultsCount, { color: colors.textSecondary }]}>
-            {filteredMemories.length} {filteredMemories.length === 1 ? 'memory' : 'memories'}
+            {memories.length} of {total || memories.length} {total === 1 ? 'memory' : 'memories'}
           </Text>
           {searchMode === 'semantic' && searchQuery.trim().length > 0 && (
             <View style={styles.semanticActivePill}>
@@ -225,45 +371,55 @@ export const MemoryListScreen = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      {/* Memory List */}
+      {/* 5. Memory List with Pagination & Refresh */}
       {loading && memories.length === 0 ? (
-        <LoadingSpinner message="Searching memories..." fullScreen />
+        <LoadingSpinner message="Loading memories..." fullScreen />
       ) : (
         <FlatList
-          data={filteredMemories}
+          data={memories}
           keyExtractor={(item) => item._id}
           contentContainerStyle={[
             styles.listContent,
             { paddingBottom: insets.bottom + 95 },
           ]}
           showsVerticalScrollIndicator={false}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
           refreshControl={
             <RefreshControl
               refreshing={loading}
               onRefresh={loadMemories}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
+              tintColor={colors.primaryLight}
+              colors={[colors.primaryLight]}
             />
           }
           ListEmptyComponent={
             <EmptyState
-              icon={searchMode === 'semantic' ? 'sparkles-outline' : 'search-outline'}
-              title="No memories match"
-              description={
-                searchQuery
-                  ? `No memories found matching "${searchQuery}". Try a broader semantic concept or different category.`
-                  : 'Start capturing your voice notes and memories.'
-              }
-              actionTitle="Record Memo"
-              onAction={() => navigation.navigate('Record')}
+              icon={emptyDetails.icon}
+              title={emptyDetails.title}
+              description={emptyDetails.description}
+              actionTitle="Record Voice Memo"
+              onAction={() => navigation.navigate(ROUTES.RECORD)}
             />
+          }
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator size="small" color={colors.primaryLight} />
+                <Text style={[styles.footerLoaderText, { color: colors.textSecondary }]}>
+                  Loading more memories...
+                </Text>
+              </View>
+            ) : null
           }
           renderItem={({ item }) => (
             <MemoryCard
               memory={item}
-              onPress={() => navigation.navigate('MemoryDetail', { memoryId: item._id })}
+              onPress={() => navigation.navigate(ROUTES.MEMORY_DETAIL, { memoryId: item._id })}
               onTogglePin={(id) => dispatch(togglePin(id))}
-              onDelete={(id) => dispatch(deleteMemory(id))}
+              onToggleFavorite={(id) => dispatch(toggleFavorite(id))}
+              onToggleArchive={(id) => dispatch(toggleArchive(id))}
+              onDelete={(id) => handleDelete(id, item.title)}
             />
           )}
         />
@@ -275,6 +431,24 @@ export const MemoryListScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  sectionTabsWrap: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    borderBottomWidth: 1,
+    paddingHorizontal: spacing.sm,
+  },
+  sectionTabBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  sectionTabText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
   },
   modeBar: {
     paddingHorizontal: spacing.lg,
@@ -299,25 +473,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   dateFilterContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 6,
+    paddingVertical: 2,
   },
   datePill: {
     paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: radius.xs,
+    paddingVertical: 4,
+    borderRadius: radius.full,
     borderWidth: 1,
   },
   datePillText: {
-    fontSize: 10,
+    fontSize: typography.sizes.xxs,
+    fontWeight: typography.weights.medium,
   },
   filterMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xs,
+    paddingVertical: 8,
   },
   countBadgeRow: {
     flexDirection: 'row',
@@ -331,8 +505,8 @@ const styles = StyleSheet.create({
   semanticActivePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(139, 92, 246, 0.15)',
-    paddingHorizontal: 6,
+    backgroundColor: 'rgba(139, 92, 246, 0.16)',
+    paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: radius.full,
   },
@@ -354,8 +528,17 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.semibold,
   },
   listContent: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xs,
+    padding: spacing.lg,
+  },
+  footerLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    gap: 8,
+  },
+  footerLoaderText: {
+    fontSize: typography.sizes.xs,
   },
 });
 

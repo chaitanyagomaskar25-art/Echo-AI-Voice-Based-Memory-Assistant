@@ -76,6 +76,23 @@ const MemorySchema = new mongoose.Schema(
     isPinned: {
       type: Boolean,
       default: false,
+      index: true,
+    },
+    isFavorite: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    isArchived: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    clientLocalId: {
+      type: String,
+      default: null,
+      index: true,
+      sparse: true,
     },
     reminders: [ReminderSchema],
     actionItems: [{

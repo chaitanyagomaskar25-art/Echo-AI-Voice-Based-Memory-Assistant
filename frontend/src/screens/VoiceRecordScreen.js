@@ -28,6 +28,7 @@ import { spacing, radius } from '../theme/spacing';
 import typography from '../theme/typography';
 import { formatDuration } from '../utils/dateFormatter';
 import { uploadVoiceRecording, resetUploadState } from '../store/slices/audioSlice';
+import { saveOfflineVoiceNote, setSyncModalVisible } from '../store/slices/offlineSlice';
 import { ROUTES } from '../navigation/routes';
 import aiApi from '../api/aiApi';
 
@@ -39,6 +40,7 @@ export const VoiceRecordScreen = ({ navigation }) => {
   const { colors, isDark } = useTheme();
 
   const { uploadProgress, uploadStatus, uploadError } = useSelector((state) => state.audio);
+  const { isOnline } = useSelector((state) => state.offline);
 
   // Recording State
   const [permissionStatus, setPermissionStatus] = useState('undetermined'); // 'granted' | 'denied' | 'undetermined'
@@ -380,6 +382,45 @@ export const VoiceRecordScreen = ({ navigation }) => {
     }
   };
 
+  // 5.5 SAVE AS OFFLINE DRAFT EXPLICITLY
+  const handleSaveOfflineDraft = async () => {
+    if (!recordedUri) {
+      Alert.alert('No Recording', 'Please record audio before saving.');
+      return;
+    }
+    const durationSeconds = Math.max(1, Math.round(durationMillis / 1000));
+    const finalTitle = title.trim() || aiPreview?.title || 'Voice Draft';
+    const finalTranscript = transcript.trim();
+
+    await dispatch(
+      saveOfflineVoiceNote({
+        uri: recordedUri,
+        duration: durationSeconds,
+        transcript: finalTranscript,
+        title: finalTitle,
+        category: selectedCategory,
+      })
+    );
+
+    Alert.alert(
+      'Draft Saved Offline',
+      'Your recording has been preserved in local device storage. It will remain safe on your device until synced with MongoDB.',
+      [
+        {
+          text: 'View Offline Queue',
+          onPress: () => {
+            dispatch(setSyncModalVisible(true));
+            navigation.navigate(ROUTES.HOME);
+          },
+        },
+        {
+          text: 'Done',
+          onPress: () => navigation.navigate(ROUTES.HOME),
+        },
+      ]
+    );
+  };
+
   // 6. SAVE RECORDING AND UPLOAD SECURELY TO BACKEND
   const handleSaveAndUpload = async () => {
     if (!recordedUri) {
@@ -388,13 +429,47 @@ export const VoiceRecordScreen = ({ navigation }) => {
     }
 
     const durationSeconds = Math.max(1, Math.round(durationMillis / 1000));
+    const finalTitle = title.trim() || aiPreview?.title || 'Voice Memory';
+    const finalTranscript = transcript.trim();
+
+    // Offline handling: If device is offline, store directly in persistent queue
+    if (!isOnline) {
+      await dispatch(
+        saveOfflineVoiceNote({
+          uri: recordedUri,
+          duration: durationSeconds,
+          transcript: finalTranscript,
+          title: finalTitle,
+          category: selectedCategory,
+        })
+      );
+
+      Alert.alert(
+        'Saved to Offline Storage',
+        'No internet connection detected. Your voice memo has been safely stored on your device and will automatically sync to MongoDB as soon as connectivity returns.',
+        [
+          {
+            text: 'Manage Sync Queue',
+            onPress: () => {
+              dispatch(setSyncModalVisible(true));
+              navigation.navigate(ROUTES.HOME);
+            },
+          },
+          {
+            text: 'Done',
+            onPress: () => navigation.navigate(ROUTES.HOME),
+          },
+        ]
+      );
+      return;
+    }
 
     const result = await dispatch(
       uploadVoiceRecording({
         uri: recordedUri,
         duration: durationSeconds,
-        transcript: transcript.trim(),
-        title: title.trim() || aiPreview?.title || 'Voice Memory',
+        transcript: finalTranscript,
+        title: finalTitle,
         category: selectedCategory,
         saveImmediately: true,
       })
@@ -435,6 +510,35 @@ export const VoiceRecordScreen = ({ navigation }) => {
               dispatch(resetUploadState());
               navigation.navigate(ROUTES.HOME);
             },
+          },
+        ]
+      );
+    } else {
+      // Network failed during upload -> save to persistent offline storage
+      await dispatch(
+        saveOfflineVoiceNote({
+          uri: recordedUri,
+          duration: durationSeconds,
+          transcript: finalTranscript,
+          title: finalTitle,
+          category: selectedCategory,
+        })
+      );
+
+      Alert.alert(
+        'Upload Failed — Saved Offline',
+        'Could not reach the server. Your audio recording has been safely preserved on your device and queued for automatic sync.',
+        [
+          {
+            text: 'View Offline Queue',
+            onPress: () => {
+              dispatch(setSyncModalVisible(true));
+              navigation.navigate(ROUTES.HOME);
+            },
+          },
+          {
+            text: 'OK',
+            onPress: () => navigation.navigate(ROUTES.HOME),
           },
         ]
       );
@@ -773,14 +877,37 @@ export const VoiceRecordScreen = ({ navigation }) => {
 
               {/* Save & Upload Action Button */}
               <Button
-                title={uploadStatus === 'error' ? 'Retry Upload to Server' : 'Save & Upload Voice Memory'}
-                variant={uploadStatus === 'error' ? 'danger' : 'primary'}
+                title={
+                  !isOnline
+                    ? 'Save Voice Recording (Offline)'
+                    : uploadStatus === 'error'
+                    ? 'Retry Upload to Server'
+                    : 'Save & Upload Voice Memory'
+                }
+                variant={uploadStatus === 'error' ? 'danger' : !isOnline ? 'secondary' : 'primary'}
                 size="lg"
-                icon={uploadStatus === 'error' ? 'refresh-outline' : 'cloud-upload-outline'}
+                icon={
+                  !isOnline
+                    ? 'save-outline'
+                    : uploadStatus === 'error'
+                    ? 'refresh-outline'
+                    : 'cloud-upload-outline'
+                }
                 onPress={handleSaveAndUpload}
                 loading={isUploading}
                 disabled={isUploading}
                 style={{ marginTop: spacing.md }}
+              />
+
+              {/* Secondary Option: Save as Offline Draft */}
+              <Button
+                title="Save as Offline Draft"
+                variant="outline"
+                size="md"
+                icon="folder-outline"
+                onPress={handleSaveOfflineDraft}
+                disabled={isUploading}
+                style={{ marginTop: spacing.xs }}
               />
 
               {/* Discard / Cancel Button */}

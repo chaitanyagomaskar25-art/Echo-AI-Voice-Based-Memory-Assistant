@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,23 @@ import {
   TouchableOpacity,
   Alert,
   Modal,
+  TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
-import { togglePin, toggleReminder, deleteMemory, fetchMemories } from '../store/slices/memorySlice';
+import {
+  togglePin,
+  toggleFavorite,
+  toggleArchive,
+  toggleReminder,
+  deleteMemory,
+  fetchMemories,
+} from '../store/slices/memorySlice';
+import { toggleTaskComplete } from '../store/slices/taskSlice';
 import { scheduleNewReminder } from '../store/slices/reminderSlice';
 import memoryApi from '../api/memoryApi';
+import taskApi from '../api/taskApi';
 import AudioPlayer from '../components/voice/AudioPlayer';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
@@ -44,6 +54,191 @@ export const MemoryDetailScreen = ({ route, navigation }) => {
   const [reminderModalVisible, setReminderModalVisible] = useState(false);
   const [selectedDateForReminder, setSelectedDateForReminder] = useState(null);
 
+  // Edit Memory Modal State
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editSummary, setEditSummary] = useState('');
+  const [editTranscript, setEditTranscript] = useState('');
+  const [editCategory, setEditCategory] = useState('Personal');
+  const [editTags, setEditTags] = useState([]);
+  const [newTagInput, setNewTagInput] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Related Tasks State
+  const [relatedTasks, setRelatedTasks] = useState([]);
+  const [newTaskInput, setNewTaskInput] = useState('');
+  const [isAddingTask, setIsAddingTask] = useState(false);
+
+  // Fetch memory details and related tasks
+  const loadMemoryDetails = useCallback(() => {
+    const localMatch = memories.find((m) => m._id === memoryId);
+    if (localMatch) {
+      setMemory(localMatch);
+      setLoading(false);
+    }
+
+    memoryApi
+      .getById(memoryId)
+      .then((res) => {
+        if (res.data?.data) {
+          setMemory(res.data.data);
+          if (Array.isArray(res.data.data.relatedTasks)) {
+            setRelatedTasks(res.data.data.relatedTasks);
+          }
+        } else if (res.data) {
+          setMemory(res.data);
+        }
+      })
+      .catch((err) => console.warn('Detail fetch error:', err.message))
+      .finally(() => setLoading(false));
+
+    // Fetch related tasks explicitly
+    memoryApi
+      .getRelatedTasks(memoryId)
+      .then((res) => {
+        const tasks = res.data?.data || res.data || [];
+        if (Array.isArray(tasks) && tasks.length > 0) {
+          setRelatedTasks(tasks);
+        }
+      })
+      .catch(() => {});
+  }, [memoryId, memories]);
+
+  useEffect(() => {
+    loadMemoryDetails();
+  }, [loadMemoryDetails]);
+
+  if (loading || !memory) {
+    return <LoadingSpinner message="Loading memory details..." fullScreen />;
+  }
+
+  const categoryColor = colors.categories[memory.category] || colors.primary;
+
+  const handleTogglePin = async () => {
+    await dispatch(togglePin(memory._id));
+    setMemory((prev) => ({ ...prev, isPinned: !prev.isPinned }));
+  };
+
+  const handleToggleFavorite = async () => {
+    await dispatch(toggleFavorite(memory._id));
+    setMemory((prev) => ({ ...prev, isFavorite: !prev.isFavorite }));
+  };
+
+  const handleToggleArchive = async () => {
+    await dispatch(toggleArchive(memory._id));
+    const nextArchived = !memory.isArchived;
+    setMemory((prev) => ({ ...prev, isArchived: nextArchived }));
+    Alert.alert(
+      nextArchived ? 'Memory Archived' : 'Memory Restored',
+      nextArchived
+        ? 'This memory has been moved to your archive. You can access it from the Archived tab.'
+        : 'This memory has been restored to your active memory library.'
+    );
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Memory',
+      'Are you sure you want to permanently delete this memory, its transcript and audio?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await dispatch(deleteMemory(memory._id));
+            navigation.goBack();
+          },
+        },
+      ]
+    );
+  };
+
+  // Open Edit Modal
+  const openEditModal = () => {
+    setEditTitle(memory.title);
+    setEditSummary(memory.summary || '');
+    setEditTranscript(memory.transcript || '');
+    setEditCategory(memory.category || 'Personal');
+    setEditTags(Array.isArray(memory.tags) ? [...memory.tags] : []);
+    setNewTagInput('');
+    setEditModalVisible(true);
+  };
+
+  // Save Edit
+  const handleSaveEdit = async () => {
+    if (!editTitle.trim()) {
+      Alert.alert('Validation Error', 'Title cannot be empty.');
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const res = await memoryApi.update(memory._id, {
+        title: editTitle.trim(),
+        summary: editSummary.trim(),
+        transcript: editTranscript.trim(),
+        category: editCategory,
+        tags: editTags,
+      });
+
+      if (res.data?.data) {
+        setMemory(res.data.data);
+      } else if (res.data) {
+        setMemory(res.data);
+      }
+      dispatch(fetchMemories());
+      setEditModalVisible(false);
+      Alert.alert('Memory Updated', 'Your edits have been saved.');
+    } catch (err) {
+      Alert.alert('Update Failed', err.response?.data?.message || err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Tag Management in Edit Modal
+  const handleAddTag = () => {
+    const cleanTag = newTagInput.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (cleanTag && !editTags.includes(cleanTag)) {
+      setEditTags([...editTags, cleanTag]);
+      setNewTagInput('');
+    }
+  };
+
+  const handleRemoveTag = (tagToRemove) => {
+    setEditTags(editTags.filter((t) => t !== tagToRemove));
+  };
+
+  // Toggle completion of a related task
+  const handleToggleTaskComplete = async (taskId) => {
+    await dispatch(toggleTaskComplete(taskId));
+    setRelatedTasks((prev) =>
+      prev.map((t) => (t._id === taskId ? { ...t, isCompleted: !t.isCompleted } : t))
+    );
+  };
+
+  // Quick Add Related Task
+  const handleCreateRelatedTask = async () => {
+    if (!newTaskInput.trim()) return;
+    try {
+      const res = await taskApi.create({
+        title: newTaskInput.trim(),
+        memory: memory._id,
+        category: memory.category || 'Tasks',
+        priority: 'medium',
+      });
+      const created = res.data?.data || res.data;
+      if (created) {
+        setRelatedTasks((prev) => [created, ...prev]);
+        setNewTaskInput('');
+        setIsAddingTask(false);
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Could not create task.');
+    }
+  };
+
+  // Voice Reminder preset schedule
   const handleScheduleMemoryReminder = (preset) => {
     const now = new Date();
     let remindTime = null;
@@ -84,80 +279,11 @@ export const MemoryDetailScreen = ({ route, navigation }) => {
       );
       Alert.alert(
         'Reminder Scheduled',
-        `Expo notification set for ${remindTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}, ${remindTime.toLocaleDateString()}`
+        `Notification set for ${remindTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}, ${remindTime.toLocaleDateString()}`
       );
     }
     setReminderModalVisible(false);
     setSelectedDateForReminder(null);
-  };
-
-  useEffect(() => {
-    const localMatch = memories.find((m) => m._id === memoryId);
-    if (localMatch) {
-      setMemory(localMatch);
-      setLoading(false);
-    }
-
-    memoryApi
-      .getById(memoryId)
-      .then((res) => {
-        if (res.data) setMemory(res.data);
-      })
-      .catch((err) => console.warn('Detail fetch error:', err.message))
-      .finally(() => setLoading(false));
-  }, [memoryId, memories]);
-
-  if (loading || !memory) {
-    return <LoadingSpinner message="Loading memory details..." fullScreen />;
-  }
-
-  const categoryColor = colors.categories[memory.category] || colors.primary;
-
-  const handleTogglePin = async () => {
-    await dispatch(togglePin(memory._id));
-    setMemory((prev) => ({ ...prev, isPinned: !prev.isPinned }));
-  };
-
-  const handleToggleReminderItem = async (reminderId) => {
-    await dispatch(toggleReminder({ memoryId: memory._id, reminderId }));
-    setMemory((prev) => ({
-      ...prev,
-      reminders: prev.reminders.map((r) =>
-        r._id === reminderId ? { ...r, isCompleted: !r.isCompleted } : r
-      ),
-    }));
-  };
-
-  const handleDelete = () => {
-    Alert.alert(
-      'Delete Memory',
-      'Are you sure you want to permanently delete this memory and its audio recording?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await dispatch(deleteMemory(memory._id));
-            navigation.goBack();
-          },
-        },
-      ]
-    );
-  };
-
-  // User manually edits / changes category
-  const handleChangeCategory = async (newCategory) => {
-    try {
-      const res = await memoryApi.update(memory._id, { category: newCategory });
-      if (res.data) {
-        setMemory(res.data);
-        dispatch(fetchMemories());
-      }
-      setIsChangingCategory(false);
-    } catch (err) {
-      Alert.alert('Error', 'Could not update category.');
-    }
   };
 
   const peopleEntities = (memory.entities || []).filter((e) => e.type === 'person');
@@ -201,39 +327,78 @@ export const MemoryDetailScreen = ({ route, navigation }) => {
               />
             </TouchableOpacity>
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {/* Quick Action Toolbar: Edit, Favorite, Pin, Archive, Reminder */}
+            <View style={styles.headerActionToolbar}>
+              {/* Edit Button */}
+              <TouchableOpacity
+                onPress={openEditModal}
+                style={[styles.actionIconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              >
+                <Ionicons name="pencil-outline" size={15} color={colors.primaryLight} />
+              </TouchableOpacity>
+
+              {/* Favorite Button */}
+              <TouchableOpacity
+                onPress={handleToggleFavorite}
+                style={[
+                  styles.actionIconBtn,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  memory.isFavorite && { backgroundColor: '#EAB308' + '25', borderColor: '#EAB308' },
+                ]}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              >
+                <Ionicons
+                  name={memory.isFavorite ? 'star' : 'star-outline'}
+                  size={15}
+                  color={memory.isFavorite ? '#EAB308' : colors.textSecondary}
+                />
+              </TouchableOpacity>
+
+              {/* Pin Button */}
+              <TouchableOpacity
+                onPress={handleTogglePin}
+                style={[
+                  styles.actionIconBtn,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  memory.isPinned && { backgroundColor: colors.amber + '25', borderColor: colors.amber },
+                ]}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              >
+                <Ionicons
+                  name={memory.isPinned ? 'pin' : 'pin-outline'}
+                  size={15}
+                  color={memory.isPinned ? colors.amber : colors.textSecondary}
+                />
+              </TouchableOpacity>
+
+              {/* Archive Button */}
+              <TouchableOpacity
+                onPress={handleToggleArchive}
+                style={[
+                  styles.actionIconBtn,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  memory.isArchived && { backgroundColor: `${colors.primary}25`, borderColor: colors.primaryLight },
+                ]}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              >
+                <Ionicons
+                  name={memory.isArchived ? 'archive' : 'archive-outline'}
+                  size={15}
+                  color={memory.isArchived ? colors.primaryLight : colors.textSecondary}
+                />
+              </TouchableOpacity>
+
+              {/* Reminder Bell Button */}
               <TouchableOpacity
                 onPress={() => {
                   setSelectedDateForReminder(null);
                   setReminderModalVisible(true);
                 }}
-                style={[
-                  styles.pinButton,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={[styles.actionIconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
               >
-                <Ionicons
-                  name="notifications-outline"
-                  size={16}
-                  color={colors.amber}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={handleTogglePin}
-                style={[
-                  styles.pinButton,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                  memory.isPinned && { backgroundColor: colors.amber, borderColor: colors.amber },
-                ]}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons
-                  name={memory.isPinned ? 'pin' : 'pin-outline'}
-                  size={16}
-                  color={memory.isPinned ? '#FFFFFF' : colors.textSecondary}
-                />
+                <Ionicons name="notifications-outline" size={15} color={colors.amber} />
               </TouchableOpacity>
             </View>
           </View>
@@ -248,11 +413,26 @@ export const MemoryDetailScreen = ({ route, navigation }) => {
                     key={cat}
                     category={cat}
                     isSelected={memory.category === cat}
-                    onPress={() => handleChangeCategory(cat)}
+                    onPress={async () => {
+                      const res = await memoryApi.update(memory._id, { category: cat });
+                      if (res.data) setMemory(res.data?.data || res.data);
+                      setIsChangingCategory(false);
+                      dispatch(fetchMemories());
+                    }}
                     size="sm"
                   />
                 ))}
               </ScrollView>
+            </View>
+          )}
+
+          {/* Archived Banner if applicable */}
+          {memory.isArchived && (
+            <View style={[styles.archivedBanner, { backgroundColor: `${colors.primary}18`, borderColor: `${colors.primary}35` }]}>
+              <Ionicons name="archive" size={13} color={colors.primaryLight} style={{ marginRight: 6 }} />
+              <Text style={[styles.archivedBannerText, { color: colors.primaryLight }]}>
+                This memory is archived. Tap the archive icon above to restore.
+              </Text>
             </View>
           )}
 
@@ -280,6 +460,134 @@ export const MemoryDetailScreen = ({ route, navigation }) => {
             <Text style={[styles.summaryText, { color: colors.textPrimary }]}>{memory.summary}</Text>
           </Card>
         ) : null}
+
+        {/* Related Actionable Tasks Section */}
+        <Card style={styles.sectionCard}>
+          <View style={[styles.sectionHeaderRow, { justifyContent: 'space-between' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="checkbox-outline" size={16} color={colors.amber} style={{ marginRight: 6 }} />
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+                Related Tasks ({relatedTasks.length})
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setIsAddingTask(!isAddingTask)}
+              style={styles.addTaskHeaderBtn}
+            >
+              <Ionicons
+                name={isAddingTask ? 'close' : 'add-circle-outline'}
+                size={16}
+                color={colors.primaryLight}
+                style={{ marginRight: 3 }}
+              />
+              <Text style={[styles.addTaskHeaderText, { color: colors.primaryLight }]}>
+                {isAddingTask ? 'Cancel' : 'Add Task'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick Add Task Input */}
+          {isAddingTask && (
+            <View style={[styles.quickTaskInputRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <TextInput
+                value={newTaskInput}
+                onChangeText={setNewTaskInput}
+                placeholder="Action item / task to link..."
+                placeholderTextColor={colors.textMuted}
+                style={[styles.quickTaskTextInput, { color: colors.textPrimary }]}
+              />
+              <TouchableOpacity
+                onPress={handleCreateRelatedTask}
+                style={[styles.quickTaskSubmitBtn, { backgroundColor: colors.primary }]}
+              >
+                <Text style={styles.quickTaskSubmitBtnText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Related Tasks List */}
+          {relatedTasks.length === 0 ? (
+            <Text style={[styles.emptyTasksNote, { color: colors.textMuted }]}>
+              No tasks linked to this voice memo yet. Tap "+ Add Task" to create one.
+            </Text>
+          ) : (
+            <View style={styles.tasksListWrap}>
+              {relatedTasks.map((task) => (
+                <View
+                  key={task._id}
+                  style={[
+                    styles.relatedTaskItemRow,
+                    { borderBottomColor: colors.borderLight },
+                  ]}
+                >
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => handleToggleTaskComplete(task._id)}
+                    style={styles.taskCheckboxTouch}
+                  >
+                    <Ionicons
+                      name={task.isCompleted ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={18}
+                      color={task.isCompleted ? '#10B981' : colors.textMuted}
+                    />
+                  </TouchableOpacity>
+
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[
+                        styles.relatedTaskTitle,
+                        { color: colors.textPrimary },
+                        task.isCompleted && styles.taskCompletedText,
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {task.title}
+                    </Text>
+
+                    {task.dueDate && (
+                      <Text style={[styles.relatedTaskDate, { color: colors.textSecondary }]}>
+                        Due: {new Date(task.dueDate).toLocaleDateString()}
+                      </Text>
+                    )}
+                  </View>
+
+                  {task.priority && (
+                    <View
+                      style={[
+                        styles.taskPriorityPill,
+                        {
+                          backgroundColor:
+                            task.priority === 'urgent'
+                              ? 'rgba(239, 68, 68, 0.15)'
+                              : task.priority === 'high'
+                              ? 'rgba(245, 158, 11, 0.15)'
+                              : 'rgba(59, 130, 246, 0.15)',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.taskPriorityText,
+                          {
+                            color:
+                              task.priority === 'urgent'
+                                ? '#EF4444'
+                                : task.priority === 'high'
+                                ? '#F59E0B'
+                                : '#3B82F6',
+                          },
+                        ]}
+                      >
+                        {task.priority.toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+        </Card>
 
         {/* Main Points / Key Takeaways */}
         {memory.mainPoints && memory.mainPoints.length > 0 && (
@@ -338,22 +646,6 @@ export const MemoryDetailScreen = ({ route, navigation }) => {
           </Card>
         )}
 
-        {/* Action Items Checklist */}
-        {memory.actionItems && memory.actionItems.length > 0 && (
-          <Card style={styles.sectionCard}>
-            <View style={styles.sectionHeaderRow}>
-              <Ionicons name="checkbox-outline" size={16} color={colors.emerald} style={{ marginRight: 6 }} />
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Extracted Action Items</Text>
-            </View>
-            {memory.actionItems.map((action, i) => (
-              <View key={i} style={[styles.actionRow, { borderBottomColor: colors.borderLight }]}>
-                <Ionicons name="arrow-forward-circle" size={16} color={colors.emerald} style={{ marginRight: 8 }} />
-                <Text style={[styles.actionText, { color: colors.textPrimary }]}>{action}</Text>
-              </View>
-            ))}
-          </Card>
-        )}
-
         {/* People & Projects Mentioned */}
         {(peopleEntities.length > 0 || projectEntities.length > 0) && (
           <Card style={styles.sectionCard}>
@@ -392,17 +684,6 @@ export const MemoryDetailScreen = ({ route, navigation }) => {
           </Card>
         )}
 
-        {/* Other Entities & Locations */}
-        {otherEntities.length > 0 && (
-          <Card style={styles.sectionCard}>
-            <View style={styles.sectionHeaderRow}>
-              <Ionicons name="cube-outline" size={15} color={colors.cyan} style={{ marginRight: 6 }} />
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Entities & Locations</Text>
-            </View>
-            <EntityChips entities={otherEntities} maxDisplay={10} />
-          </Card>
-        )}
-
         {/* Voice Transcript Card with Original Preservation Toggle */}
         <Card style={styles.sectionCard}>
           <View style={[styles.sectionHeaderRow, { justifyContent: 'space-between' }]}>
@@ -411,24 +692,10 @@ export const MemoryDetailScreen = ({ route, navigation }) => {
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Voice Transcript</Text>
             </View>
 
-            <TouchableOpacity
-              onPress={() =>
-                navigation.navigate(ROUTES.TRANSCRIPTION_REVIEW, {
-                  memoryId: memory._id,
-                  audioUrl: memory.audioUrl,
-                  initialTranscript: memory.transcript,
-                  initialTitle: memory.title,
-                  initialCategory: memory.category,
-                  initialLanguage: memory.language || 'en',
-                  transcriptionStatus: memory.transcriptionStatus || 'completed',
-                  transcriptionError: memory.transcriptionError,
-                })
-              }
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-            >
+            <TouchableOpacity onPress={openEditModal} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Ionicons name="create-outline" size={14} color={colors.primaryLight} />
               <Text style={{ fontSize: typography.sizes.xs, color: colors.primaryLight, fontWeight: typography.weights.bold }}>
-                Edit / Retry STT
+                Edit Text
               </Text>
             </TouchableOpacity>
           </View>
@@ -461,19 +728,37 @@ export const MemoryDetailScreen = ({ route, navigation }) => {
           )}
         </Card>
 
-        {/* Tags / Keywords */}
-        {memory.tags && memory.tags.length > 0 && (
-          <View style={styles.tagsContainer}>
-            {memory.tags.map((t, idx) => (
-              <View
-                key={idx}
-                style={[styles.tagChip, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              >
-                <Text style={[styles.tagText, { color: colors.textSecondary }]}>#{t}</Text>
-              </View>
-            ))}
+        {/* Tags / Keywords with Edit shortcut */}
+        <Card style={styles.sectionCard}>
+          <View style={[styles.sectionHeaderRow, { justifyContent: 'space-between' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="pricetags-outline" size={15} color={colors.primaryLight} style={{ marginRight: 6 }} />
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Tags & Keywords</Text>
+            </View>
+            <TouchableOpacity onPress={openEditModal}>
+              <Text style={{ fontSize: typography.sizes.xs, color: colors.primaryLight, fontWeight: typography.weights.bold }}>
+                + Edit Tags
+              </Text>
+            </TouchableOpacity>
           </View>
-        )}
+
+          <View style={styles.tagsContainer}>
+            {memory.tags && memory.tags.length > 0 ? (
+              memory.tags.map((t, idx) => (
+                <View
+                  key={idx}
+                  style={[styles.tagChip, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                >
+                  <Text style={[styles.tagText, { color: colors.textSecondary }]}>#{t}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={[styles.sectionEmptyText, { color: colors.textMuted }]}>
+                No tags assigned. Tap "+ Edit Tags" to add custom tags.
+              </Text>
+            )}
+          </View>
+        </Card>
 
         {/* Delete Button */}
         <Button
@@ -486,7 +771,119 @@ export const MemoryDetailScreen = ({ route, navigation }) => {
         />
       </ScrollView>
 
-      {/* Voice Memory Reminder Modal */}
+      {/* 1. EDIT MEMORY MODAL (Title, Summary, Transcript, Category, Tags) */}
+      <Modal
+        visible={editModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.editSheet, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitleText, { color: colors.textPrimary }]}>
+                Edit Memory Details
+              </Text>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ paddingVertical: spacing.md }} showsVerticalScrollIndicator={false}>
+              {/* Title Input */}
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Title</Text>
+              <TextInput
+                value={editTitle}
+                onChangeText={setEditTitle}
+                placeholder="Memory Title"
+                placeholderTextColor={colors.textMuted}
+                style={[styles.modalInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
+              />
+
+              {/* Category Selector */}
+              <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 12 }]}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginVertical: 4 }}>
+                {EDITABLE_CATEGORIES.map((cat) => (
+                  <CategoryPill
+                    key={cat}
+                    category={cat}
+                    isSelected={editCategory === cat}
+                    onPress={() => setEditCategory(cat)}
+                    size="sm"
+                  />
+                ))}
+              </ScrollView>
+
+              {/* Summary Input */}
+              <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 12 }]}>Summary</Text>
+              <TextInput
+                value={editSummary}
+                onChangeText={setEditSummary}
+                placeholder="AI / User summary"
+                placeholderTextColor={colors.textMuted}
+                multiline
+                numberOfLines={3}
+                style={[styles.modalInput, styles.modalTextArea, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
+              />
+
+              {/* Transcript Input */}
+              <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 12 }]}>
+                Transcript (User Edited)
+              </Text>
+              <TextInput
+                value={editTranscript}
+                onChangeText={setEditTranscript}
+                placeholder="Voice transcript text"
+                placeholderTextColor={colors.textMuted}
+                multiline
+                numberOfLines={4}
+                style={[styles.modalInput, styles.modalTextArea, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
+              />
+
+              {/* Tags Management */}
+              <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 12 }]}>Tags</Text>
+              <View style={styles.editTagsContainer}>
+                {editTags.map((tag, idx) => (
+                  <View
+                    key={idx}
+                    style={[styles.editTagChip, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  >
+                    <Text style={[styles.editTagChipText, { color: colors.primaryLight }]}>#{tag}</Text>
+                    <TouchableOpacity onPress={() => handleRemoveTag(tag)} style={{ marginLeft: 5 }}>
+                      <Ionicons name="close-circle" size={14} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+
+              {/* Add New Tag Input Row */}
+              <View style={[styles.addTagInputRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <TextInput
+                  value={newTagInput}
+                  onChangeText={setNewTagInput}
+                  placeholder="Add a new tag..."
+                  placeholderTextColor={colors.textMuted}
+                  onSubmitEditing={handleAddTag}
+                  style={[styles.addTagTextInput, { color: colors.textPrimary }]}
+                />
+                <TouchableOpacity onPress={handleAddTag} style={[styles.addTagBtn, { backgroundColor: colors.primary }]}>
+                  <Text style={styles.addTagBtnText}>Add</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Save Button */}
+              <Button
+                title={savingEdit ? 'Saving Changes...' : 'Save Memory Changes'}
+                onPress={handleSaveEdit}
+                loading={savingEdit}
+                style={{ marginTop: 24, marginBottom: 20 }}
+              />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 2. VOICE REMINDER PRESET MODAL */}
       <Modal
         visible={reminderModalVisible}
         transparent={true}
@@ -600,6 +997,19 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xs,
     fontWeight: typography.weights.bold,
   },
+  headerActionToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  actionIconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   categorySwitcherRow: {
     padding: spacing.sm,
     borderRadius: radius.md,
@@ -611,20 +1021,25 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xxs,
     fontWeight: typography.weights.semibold,
   },
-  pinButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
+  archivedBanner: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  archivedBannerText: {
+    fontSize: typography.sizes.xxs,
+    fontWeight: typography.weights.medium,
   },
   title: {
     fontSize: typography.sizes.lg,
     fontWeight: typography.weights.bold,
     letterSpacing: typography.letterSpacing.tight,
     lineHeight: 28,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   date: {
     fontSize: typography.sizes.xs,
@@ -634,7 +1049,6 @@ const styles = StyleSheet.create({
   },
   sectionCard: {
     marginBottom: spacing.md,
-    padding: spacing.md,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -647,8 +1061,79 @@ const styles = StyleSheet.create({
     letterSpacing: typography.letterSpacing.tight,
   },
   summaryText: {
-    fontSize: typography.sizes.sm,
+    fontSize: typography.sizes.xs,
     lineHeight: 22,
+  },
+  addTaskHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  addTaskHeaderText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.semibold,
+  },
+  quickTaskInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 10,
+  },
+  quickTaskTextInput: {
+    flex: 1,
+    fontSize: typography.sizes.xs,
+    paddingVertical: 6,
+  },
+  quickTaskSubmitBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+  },
+  quickTaskSubmitBtnText: {
+    fontSize: typography.sizes.xs,
+    color: '#FFFFFF',
+    fontWeight: typography.weights.bold,
+  },
+  emptyTasksNote: {
+    fontSize: typography.sizes.xs,
+    fontStyle: 'italic',
+    paddingVertical: 4,
+  },
+  tasksListWrap: {
+    gap: 8,
+  },
+  relatedTaskItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    gap: 8,
+  },
+  taskCheckboxTouch: {
+    padding: 2,
+  },
+  relatedTaskTitle: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+  },
+  taskCompletedText: {
+    textDecorationLine: 'line-through',
+    opacity: 0.6,
+  },
+  relatedTaskDate: {
+    fontSize: 10,
+    marginTop: 2,
+  },
+  taskPriorityPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.xs,
+  },
+  taskPriorityText: {
+    fontSize: 9,
+    fontWeight: typography.weights.bold,
   },
   pointsList: {
     gap: 8,
@@ -662,7 +1147,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    marginTop: 7,
+    marginTop: 6,
   },
   pointText: {
     fontSize: typography.sizes.xs,
@@ -694,16 +1179,6 @@ const styles = StyleSheet.create({
   deadlineContext: {
     fontSize: typography.sizes.xxs,
     marginTop: 1,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 7,
-    borderBottomWidth: 1,
-  },
-  actionText: {
-    fontSize: typography.sizes.xs,
-    flex: 1,
   },
   subSectionLabel: {
     fontSize: typography.sizes.xxs,
@@ -748,7 +1223,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginBottom: spacing.lg,
   },
   tagChip: {
     paddingHorizontal: 10,
@@ -760,6 +1234,10 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xxs,
     fontWeight: typography.weights.medium,
   },
+  sectionEmptyText: {
+    fontSize: typography.sizes.xs,
+    fontStyle: 'italic',
+  },
   deleteButton: {
     marginTop: spacing.sm,
   },
@@ -768,7 +1246,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: spacing.md,
+  },
+  editSheet: {
+    width: '100%',
+    maxHeight: '90%',
+    borderRadius: radius.lg,
     padding: spacing.lg,
+    borderWidth: 1,
   },
   modalCard: {
     width: '100%',
@@ -778,8 +1263,10 @@ const styles = StyleSheet.create({
   },
   modalHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
   },
   modalTitleText: {
     fontSize: typography.sizes.md,
@@ -789,6 +1276,65 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xs,
     marginBottom: spacing.md,
     lineHeight: 18,
+  },
+  inputLabel: {
+    fontSize: typography.sizes.xxs,
+    fontWeight: typography.weights.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  modalInput: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: typography.sizes.xs,
+  },
+  modalTextArea: {
+    minHeight: 65,
+    textAlignVertical: 'top',
+  },
+  editTagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
+  editTagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    borderWidth: 1,
+  },
+  editTagChipText: {
+    fontSize: typography.sizes.xxs,
+    fontWeight: typography.weights.semibold,
+  },
+  addTagInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+  },
+  addTagTextInput: {
+    flex: 1,
+    fontSize: typography.sizes.xs,
+    paddingVertical: 6,
+  },
+  addTagBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.sm,
+  },
+  addTagBtnText: {
+    fontSize: typography.sizes.xxs,
+    color: '#FFFFFF',
+    fontWeight: typography.weights.bold,
   },
   presetGrid: {
     gap: 8,

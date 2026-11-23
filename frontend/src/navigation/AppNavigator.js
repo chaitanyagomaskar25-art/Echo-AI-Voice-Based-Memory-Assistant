@@ -17,6 +17,9 @@ import { ROUTES } from './routes';
 import { useTheme } from '../theme/ThemeContext';
 import typography from '../theme/typography';
 import { restoreStoredAuth } from '../store/slices/authSlice';
+import { initOfflineSync } from '../store/slices/offlineSlice';
+import SyncStatusBanner from '../components/common/SyncStatusBanner';
+import OfflineSyncModal from '../components/offline/OfflineSyncModal';
 
 const Stack = createNativeStackNavigator();
 
@@ -28,6 +31,7 @@ export const AppNavigator = () => {
 
   useEffect(() => {
     dispatch(restoreStoredAuth());
+    dispatch(initOfflineSync());
   }, [dispatch]);
 
   // Splash / Loading while restoring token from SecureStore
@@ -47,96 +51,100 @@ export const AppNavigator = () => {
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator
-        screenOptions={{
-          headerStyle: {
-            backgroundColor: colors.background,
-          },
-          headerTintColor: colors.textPrimary,
-          headerTitleStyle: {
-            fontWeight: typography.weights.bold,
-            fontSize: typography.sizes.md,
-            letterSpacing: typography.letterSpacing.tight,
-          },
-          headerShadowVisible: false,
-          headerBackTitleVisible: false,
-          contentStyle: {
-            backgroundColor: colors.background,
-          },
-        }}
-      >
-        {!isAuthenticated ? (
-          // Unauthenticated flow
-          <Stack.Screen
-            name="AuthFlow"
-            component={AuthNavigator}
-            options={{ headerShown: false }}
-          />
-        ) : (
-          // Authenticated Protected flow
-          <>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <SyncStatusBanner />
+      <NavigationContainer>
+        <Stack.Navigator
+          screenOptions={{
+            headerStyle: {
+              backgroundColor: colors.background,
+            },
+            headerTintColor: colors.textPrimary,
+            headerTitleStyle: {
+              fontWeight: typography.weights.bold,
+              fontSize: typography.sizes.md,
+              letterSpacing: typography.letterSpacing.tight,
+            },
+            headerShadowVisible: false,
+            headerBackTitleVisible: false,
+            contentStyle: {
+              backgroundColor: colors.background,
+            },
+          }}
+        >
+          {!isAuthenticated ? (
+            // Unauthenticated flow
             <Stack.Screen
-              name={ROUTES.MAIN_TABS}
-              component={BottomTabNavigator}
+              name="AuthFlow"
+              component={AuthNavigator}
               options={{ headerShown: false }}
             />
-            <Stack.Screen
-              name={ROUTES.PROFILE_SETUP}
-              component={ProfileSetupScreen}
-              options={{
-                title: 'Personalization',
-                headerShown: true,
-              }}
-            />
-            <Stack.Screen
-              name={ROUTES.MEMORY_DETAIL}
-              component={MemoryDetailScreen}
-              options={{
-                title: 'Memory Detail',
-              }}
-            />
-            <Stack.Screen
-              name={ROUTES.TRANSCRIPTION_REVIEW}
-              component={TranscriptionReviewScreen}
-              options={{
-                title: 'Review Transcript',
-                headerShown: false,
-              }}
-            />
-            <Stack.Screen
-              name={ROUTES.SETTINGS}
-              component={SettingsScreen}
-              options={{
-                title: 'Settings & Status',
-              }}
-            />
-            <Stack.Screen
-              name={ROUTES.TASKS}
-              component={TasksScreen}
-              options={{
-                title: 'AI Task Manager',
-              }}
-            />
-            <Stack.Screen
-              name={ROUTES.INSIGHTS}
-              component={InsightsScreen}
-              options={{
-                title: 'Cognitive Insights',
-              }}
-            />
-            <Stack.Screen
-              name={ROUTES.RECAP}
-              component={RecapScreen}
-              options={{
-                title: 'Memory Recap',
-                headerShown: false,
-              }}
-            />
-          </>
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+          ) : (
+            // Authenticated Protected flow
+            <>
+              <Stack.Screen
+                name={ROUTES.MAIN_TABS}
+                component={BottomTabNavigator}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name={ROUTES.PROFILE_SETUP}
+                component={ProfileSetupScreen}
+                options={{
+                  title: 'Personalization',
+                  headerShown: true,
+                }}
+              />
+              <Stack.Screen
+                name={ROUTES.MEMORY_DETAIL}
+                component={MemoryDetailScreen}
+                options={{
+                  title: 'Memory Detail',
+                }}
+              />
+              <Stack.Screen
+                name={ROUTES.TRANSCRIPTION_REVIEW}
+                component={TranscriptionReviewScreen}
+                options={{
+                  title: 'Review Transcript',
+                  headerShown: false,
+                }}
+              />
+              <Stack.Screen
+                name={ROUTES.SETTINGS}
+                component={SettingsScreen}
+                options={{
+                  title: 'Settings & Status',
+                }}
+              />
+              <Stack.Screen
+                name={ROUTES.TASKS}
+                component={TasksScreen}
+                options={{
+                  title: 'AI Task Manager',
+                }}
+              />
+              <Stack.Screen
+                name={ROUTES.INSIGHTS}
+                component={InsightsScreen}
+                options={{
+                  title: 'Cognitive Insights',
+                }}
+              />
+              <Stack.Screen
+                name={ROUTES.RECAP}
+                component={RecapScreen}
+                options={{
+                  title: 'Memory Recap',
+                  headerShown: false,
+                }}
+              />
+            </>
+          )}
+        </Stack.Navigator>
+      </NavigationContainer>
+      <OfflineSyncModal />
+    </View>
   );
 };
 

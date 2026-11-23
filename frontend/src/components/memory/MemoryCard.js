@@ -13,6 +13,8 @@ export const MemoryCard = ({
   memory,
   onPress,
   onTogglePin,
+  onToggleFavorite,
+  onToggleArchive,
   onDelete,
   style,
 }) => {
@@ -33,6 +35,14 @@ export const MemoryCard = ({
           borderLeftWidth: 3.5,
           borderLeftColor: colors.amber,
         },
+        memory.isFavorite && !memory.isPinned && {
+          borderColor: isDark ? 'rgba(234, 179, 8, 0.3)' : 'rgba(202, 138, 4, 0.25)',
+          borderLeftWidth: 3.5,
+          borderLeftColor: '#EAB308',
+        },
+        memory.isArchived && {
+          opacity: 0.75,
+        },
         style,
       ]}
     >
@@ -50,6 +60,14 @@ export const MemoryCard = ({
               {memory.category}
             </Text>
           </View>
+          {memory.audioUrl && (
+            <View style={[styles.audioBadge, { backgroundColor: `${colors.primary}18` }]}>
+              <Ionicons name="volume-medium" size={11} color={colors.primaryLight} style={{ marginRight: 3 }} />
+              <Text style={[styles.audioBadgeText, { color: colors.primaryLight }]}>
+                {memory.audioDuration ? `${Math.round(memory.audioDuration)}s` : 'Audio'}
+              </Text>
+            </View>
+          )}
           {typeof memory.relevanceScore === 'number' && (
             <View style={styles.relevanceBadge}>
               <Ionicons name="sparkles" size={10} color="#A78BFA" style={{ marginRight: 3 }} />
@@ -61,8 +79,25 @@ export const MemoryCard = ({
           </Text>
         </View>
 
-        {/* Pin and Options */}
+        {/* Action icons: Favorite, Pin, Archive, Delete */}
         <View style={styles.actionRow}>
+          {onToggleFavorite && (
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation();
+                onToggleFavorite(memory._id);
+              }}
+              style={styles.iconButton}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            >
+              <Ionicons
+                name={memory.isFavorite ? 'star' : 'star-outline'}
+                size={15}
+                color={memory.isFavorite ? '#EAB308' : colors.textMuted}
+              />
+            </TouchableOpacity>
+          )}
+
           {onTogglePin && (
             <TouchableOpacity
               onPress={(e) => {
@@ -70,12 +105,29 @@ export const MemoryCard = ({
                 onTogglePin(memory._id);
               }}
               style={styles.iconButton}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
             >
               <Ionicons
                 name={memory.isPinned ? 'pin' : 'pin-outline'}
-                size={16}
+                size={15}
                 color={memory.isPinned ? colors.amber : colors.textMuted}
+              />
+            </TouchableOpacity>
+          )}
+
+          {onToggleArchive && (
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation();
+                onToggleArchive(memory._id);
+              }}
+              style={styles.iconButton}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            >
+              <Ionicons
+                name={memory.isArchived ? 'archive' : 'archive-outline'}
+                size={15}
+                color={memory.isArchived ? colors.primaryLight : colors.textMuted}
               />
             </TouchableOpacity>
           )}
@@ -87,9 +139,9 @@ export const MemoryCard = ({
                 onDelete(memory._id);
               }}
               style={styles.iconButton}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
             >
-              <Ionicons name="trash-outline" size={15} color={colors.textMuted} />
+              <Ionicons name="trash-outline" size={14} color={colors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
@@ -161,6 +213,18 @@ const styles = StyleSheet.create({
   },
   categoryText: {
     fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.bold,
+  },
+  audioBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: radius.xs,
+    marginRight: spacing.sm,
+  },
+  audioBadgeText: {
+    fontSize: 10,
     fontWeight: typography.weights.bold,
   },
   dateText: {
