@@ -375,6 +375,35 @@ export const HomeScreen = ({ navigation }) => {
               </Text>
             </View>
           </View>
+
+          {/* Quick link to AI Generated Daily & Weekly Recap */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate(ROUTES.RECAP)}
+            style={[
+              styles.viewRecapButton,
+              {
+                backgroundColor: `${colors.primary}20`,
+                borderColor: `${colors.primary}45`,
+              },
+            ]}
+          >
+            <Ionicons
+              name="sparkles"
+              size={14}
+              color={colors.primaryLight}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={[styles.viewRecapText, { color: colors.primaryLight }]}>
+              View AI Daily & Weekly Recap
+            </Text>
+            <Ionicons
+              name="arrow-forward"
+              size={13}
+              color={colors.primaryLight}
+              style={{ marginLeft: 6 }}
+            />
+          </TouchableOpacity>
         </Card>
 
         {/* 3. Hero Recording & Quick Note Section (One-Hand Accessible) */}
@@ -1017,6 +1046,20 @@ const styles = StyleSheet.create({
   metricDivider: {
     width: 1,
     height: 24,
+  },
+  viewRecapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginTop: spacing.md,
+  },
+  viewRecapText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.bold,
   },
   heroActionZone: {
     marginBottom: spacing.lg,

@@ -12,6 +12,7 @@ import ProfileSetupScreen from '../screens/auth/ProfileSetupScreen';
 import TranscriptionReviewScreen from '../screens/TranscriptionReviewScreen';
 import TasksScreen from '../screens/TasksScreen';
 import InsightsScreen from '../screens/InsightsScreen';
+import RecapScreen from '../screens/RecapScreen';
 import { ROUTES } from './routes';
 import { useTheme } from '../theme/ThemeContext';
 import typography from '../theme/typography';
@@ -122,6 +123,14 @@ export const AppNavigator = () => {
               component={InsightsScreen}
               options={{
                 title: 'Cognitive Insights',
+              }}
+            />
+            <Stack.Screen
+              name={ROUTES.RECAP}
+              component={RecapScreen}
+              options={{
+                title: 'Memory Recap',
+                headerShown: false,
               }}
             />
           </>
