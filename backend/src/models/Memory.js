@@ -142,6 +142,12 @@ const MemorySchema = new mongoose.Schema(
 
 // Indexes for high-speed text search and filtering
 MemorySchema.index({ title: 'text', transcript: 'text', summary: 'text', tags: 'text' });
+MemorySchema.index({ user: 1, createdAt: -1 });
+MemorySchema.index({ user: 1, category: 1, createdAt: -1 });
+MemorySchema.index({ user: 1, isPinned: -1, createdAt: -1 });
+MemorySchema.index({ user: 1, isFavorite: 1, createdAt: -1 });
+MemorySchema.index({ user: 1, isArchived: 1, createdAt: -1 });
+MemorySchema.index({ user: 1, clientLocalId: 1 }, { sparse: true });
 MemorySchema.index({ category: 1, createdAt: -1 });
 MemorySchema.index({ isPinned: -1, createdAt: -1 });
 

@@ -49,4 +49,6 @@ const NotificationPreferenceSchema = new mongoose.Schema(
   }
 );
 
+NotificationPreferenceSchema.index({ user: 1 }, { unique: true, sparse: true });
+
 module.exports = mongoose.model('NotificationPreference', NotificationPreferenceSchema);

@@ -65,6 +65,7 @@ export const VoiceRecordScreen = ({ navigation }) => {
   // References
   const recordingRef = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const soundRef = useRef(null);
 
   // Check microphone permissions on mount
   useEffect(() => {
@@ -142,6 +143,10 @@ export const VoiceRecordScreen = ({ navigation }) => {
 
   const cleanupSound = async () => {
     try {
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
       if (sound) {
         await sound.unloadAsync();
         setSound(null);
@@ -343,6 +348,7 @@ export const VoiceRecordScreen = ({ navigation }) => {
           { shouldPlay: true },
           onPlaybackStatusUpdate
         );
+        soundRef.current = newSound;
         setSound(newSound);
         setIsPlayingPreview(true);
         return;

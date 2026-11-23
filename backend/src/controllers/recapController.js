@@ -78,6 +78,13 @@ exports.getRecapById = async (req, res, next) => {
       });
     }
 
+    if (req.user && recap.user && String(recap.user) !== String(req.user._id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view this recap',
+      });
+    }
+
     res.json({
       success: true,
       data: recap,

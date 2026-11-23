@@ -116,9 +116,9 @@ exports.getMemories = async (req, res, next) => {
 
     const query = {};
 
-    // User authentication scoping: users can only access their own memories (or demo/unassigned)
+    // User authentication scoping: strictly isolate user data
     if (req.user) {
-      query.$or = [{ user: req.user._id }, { user: null }, { user: { $exists: false } }];
+      query.user = req.user._id;
     }
 
     // Category filter
@@ -232,9 +232,17 @@ exports.getMemoryById = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Memory not found' });
     }
 
+    if (req.user && memory.user && String(memory.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view this memory' });
+    }
+
     // Fetch related tasks for this memory
     const Task = require('../models/Task');
-    const relatedTasks = await Task.find({ memory: memory._id }).sort({ dueDate: 1, createdAt: -1 });
+    const taskQuery = { memory: memory._id };
+    if (req.user) {
+      taskQuery.user = req.user._id;
+    }
+    const relatedTasks = await Task.find(taskQuery).sort({ dueDate: 1, createdAt: -1 });
 
     const memoryObj = memory.toObject();
     memoryObj.relatedTasks = relatedTasks;
@@ -352,6 +360,9 @@ exports.togglePin = async (req, res, next) => {
     if (!memory) {
       return res.status(404).json({ success: false, message: 'Memory not found' });
     }
+    if (req.user && memory.user && String(memory.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to modify this memory' });
+    }
     memory.isPinned = !memory.isPinned;
     await memory.save();
     res.json({
@@ -370,6 +381,9 @@ exports.toggleFavorite = async (req, res, next) => {
     const memory = await Memory.findById(req.params.id);
     if (!memory) {
       return res.status(404).json({ success: false, message: 'Memory not found' });
+    }
+    if (req.user && memory.user && String(memory.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to modify this memory' });
     }
     memory.isFavorite = !memory.isFavorite;
     await memory.save();
@@ -390,6 +404,9 @@ exports.toggleArchive = async (req, res, next) => {
     if (!memory) {
       return res.status(404).json({ success: false, message: 'Memory not found' });
     }
+    if (req.user && memory.user && String(memory.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to modify this memory' });
+    }
     memory.isArchived = !memory.isArchived;
     await memory.save();
     res.json({
@@ -409,6 +426,9 @@ exports.toggleReminder = async (req, res, next) => {
     const memory = await Memory.findById(id);
     if (!memory) {
       return res.status(404).json({ success: false, message: 'Memory not found' });
+    }
+    if (req.user && memory.user && String(memory.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to modify this memory' });
     }
     const reminder = memory.reminders.id(reminderId);
     if (!reminder) {
@@ -433,8 +453,11 @@ exports.semanticSearch = async (req, res, next) => {
     const embeddingService = require('../services/embeddingService');
     const queryEmbedding = await embeddingService.generateEmbedding(query.trim());
 
-    // Build filter query for MongoDB
+    // Build filter query for MongoDB with strict user scoping
     const filter = {};
+    if (req.user) {
+      filter.user = req.user._id;
+    }
     if (category && category !== 'All') {
       filter.category = category;
     }

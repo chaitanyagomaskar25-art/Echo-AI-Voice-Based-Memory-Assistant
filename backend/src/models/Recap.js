@@ -93,5 +93,6 @@ const recapSchema = new mongoose.Schema(
 );
 
 recapSchema.index({ user: 1, type: 1, dateKey: 1 }, { unique: true });
+recapSchema.index({ user: 1, periodStart: -1 });
 
 module.exports = mongoose.model('Recap', recapSchema);

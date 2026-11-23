@@ -88,6 +88,7 @@ JSON Schema:
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
+      signal: AbortSignal.timeout(15000), // 15-second timeout protection
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
@@ -121,6 +122,7 @@ JSON Schema:
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
+      signal: AbortSignal.timeout(15000), // 15-second timeout protection
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         messages: [

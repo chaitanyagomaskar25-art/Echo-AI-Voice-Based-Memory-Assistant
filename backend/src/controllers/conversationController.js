@@ -2,12 +2,14 @@ const Conversation = require('../models/Conversation');
 const Memory = require('../models/Memory');
 const aiMemoryService = require('../services/aiMemoryService');
 
-// Get all conversations (organized list)
+// Get all conversations (user-scoped organized list)
 exports.listConversations = async (req, res, next) => {
   try {
-    const conversations = await Conversation.find()
+    const query = req.user ? { user: req.user._id } : {};
+
+    const conversations = await Conversation.find(query)
       .sort({ updatedAt: -1 })
-      .select('title messages lastMessageSnippet lastMessageAt createdAt updatedAt');
+      .select('title messages lastMessageSnippet lastMessageAt createdAt updatedAt user');
 
     const formatted = conversations.map((c) => ({
       _id: c._id,
@@ -31,12 +33,15 @@ exports.listConversations = async (req, res, next) => {
   }
 };
 
-// Get single conversation with full message thread
+// Get single conversation with full message thread (user-authorized)
 exports.getConversation = async (req, res, next) => {
   try {
     const conversation = await Conversation.findById(req.params.id);
     if (!conversation) {
       return res.status(404).json({ success: false, message: 'Conversation not found' });
+    }
+    if (req.user && conversation.user && String(conversation.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view this conversation' });
     }
 
     res.json({
@@ -55,6 +60,7 @@ exports.createConversation = async (req, res, next) => {
 
     const conversation = new Conversation({
       title: title && title.trim() ? title.trim() : 'New Conversation',
+      user: req.user ? req.user._id : null,
       messages: [],
     });
 
@@ -78,7 +84,7 @@ exports.createConversation = async (req, res, next) => {
   }
 };
 
-// Send a message in a conversation: runs grounded RAG and appends response
+// Send a message in a conversation: runs grounded RAG strictly isolated to the user's memories
 exports.sendMessage = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -92,12 +98,16 @@ exports.sendMessage = async (req, res, next) => {
     if (id === 'new' || !id) {
       conversation = new Conversation({
         title: text.trim().slice(0, 45) + (text.length > 45 ? '...' : ''),
+        user: req.user ? req.user._id : null,
         messages: [],
       });
     } else {
       conversation = await Conversation.findById(id);
       if (!conversation) {
         return res.status(404).json({ success: false, message: 'Conversation not found' });
+      }
+      if (req.user && conversation.user && String(conversation.user) !== String(req.user._id)) {
+        return res.status(403).json({ success: false, message: 'Not authorized to access this conversation' });
       }
     }
 
@@ -109,9 +119,11 @@ exports.sendMessage = async (req, res, next) => {
     };
     conversation.messages.push(userMsg);
 
-    // 2. Retrieve memories and execute Grounded RAG
-    const allMemories = await Memory.find().sort({ createdAt: -1 }).limit(100);
-    const aiResult = await aiMemoryService.askEcho(text.trim(), allMemories, { category, dateFilter });
+    // 2. Retrieve ONLY user's memories and execute Grounded RAG
+    const memoryQuery = req.user ? { user: req.user._id } : {};
+    const userMemories = await Memory.find(memoryQuery).sort({ createdAt: -1 }).limit(100);
+
+    const aiResult = await aiMemoryService.askEcho(text.trim(), userMemories, { category, dateFilter });
 
     // 3. Add Echo Assistant Message
     const echoMsg = {
@@ -148,10 +160,15 @@ exports.sendMessage = async (req, res, next) => {
 // Delete a single conversation
 exports.deleteConversation = async (req, res, next) => {
   try {
-    const conversation = await Conversation.findByIdAndDelete(req.params.id);
+    const conversation = await Conversation.findById(req.params.id);
     if (!conversation) {
       return res.status(404).json({ success: false, message: 'Conversation not found' });
     }
+    if (req.user && conversation.user && String(conversation.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to delete this conversation' });
+    }
+
+    await conversation.deleteOne();
 
     res.json({
       success: true,
@@ -163,13 +180,15 @@ exports.deleteConversation = async (req, res, next) => {
   }
 };
 
-// Clear all conversations
+// Clear all conversations for the authenticated user
 exports.clearAllConversations = async (req, res, next) => {
   try {
-    await Conversation.deleteMany({});
+    const query = req.user ? { user: req.user._id } : {};
+    const result = await Conversation.deleteMany(query);
     res.json({
       success: true,
       message: 'All conversations cleared successfully',
+      deletedCount: result.deletedCount,
     });
   } catch (error) {
     next(error);

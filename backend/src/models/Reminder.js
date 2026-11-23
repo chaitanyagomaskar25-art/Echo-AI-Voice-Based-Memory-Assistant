@@ -79,4 +79,10 @@ const ReminderSchema = new mongoose.Schema(
   }
 );
 
+// Performance & query isolation indexes
+ReminderSchema.index({ user: 1, isCompleted: 1, remindAt: 1 });
+ReminderSchema.index({ user: 1, notificationId: 1 });
+ReminderSchema.index({ user: 1, task: 1 });
+ReminderSchema.index({ user: 1, memory: 1 });
+
 module.exports = mongoose.model('Reminder', ReminderSchema);

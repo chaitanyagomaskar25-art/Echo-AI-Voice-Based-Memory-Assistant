@@ -128,6 +128,33 @@ export const logoutUser = createAsyncThunk(
   }
 );
 
+// Delete user account permanently (GDPR compliance)
+export const deleteUserAccount = createAsyncThunk(
+  'auth/deleteUserAccount',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await authApi.deleteAccount();
+      await secureStorage.clearAll();
+      return response;
+    } catch (error) {
+      return rejectWithValue(error.message || 'Account deletion failed');
+    }
+  }
+);
+
+// Clear all user memory data
+export const clearAllUserData = createAsyncThunk(
+  'auth/clearAllUserData',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await authApi.clearUserData();
+      return response;
+    } catch (error) {
+      return rejectWithValue(error.message || 'Data reset failed');
+    }
+  }
+);
+
 const initialState = {
   user: null,
   token: null,
@@ -262,6 +289,15 @@ export const authSlice = createSlice({
 
     // Logout
     builder.addCase(logoutUser.fulfilled, (state) => {
+      state.user = null;
+      state.token = null;
+      state.isAuthenticated = false;
+      state.isLoading = false;
+      state.error = null;
+    });
+
+    // Delete Account
+    builder.addCase(deleteUserAccount.fulfilled, (state) => {
       state.user = null;
       state.token = null;
       state.isAuthenticated = false;

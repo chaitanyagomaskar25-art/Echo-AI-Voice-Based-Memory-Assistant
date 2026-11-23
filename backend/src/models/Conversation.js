@@ -61,4 +61,7 @@ const ConversationSchema = new mongoose.Schema(
   }
 );
 
+ConversationSchema.index({ user: 1, updatedAt: -1 });
+ConversationSchema.index({ user: 1, createdAt: -1 });
+
 module.exports = mongoose.model('Conversation', ConversationSchema);

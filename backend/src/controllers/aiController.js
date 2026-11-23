@@ -10,7 +10,8 @@ exports.askEcho = async (req, res, next) => {
     }
 
     // Retrieve user's memories to synthesize context
-    const allMemories = await Memory.find().sort({ createdAt: -1 }).limit(100);
+    const query = req.user ? { user: req.user._id } : {};
+    const allMemories = await Memory.find(query).sort({ createdAt: -1 }).limit(100);
 
     const result = await aiMemoryService.askEcho(question, allMemories, { category, dateFilter });
 

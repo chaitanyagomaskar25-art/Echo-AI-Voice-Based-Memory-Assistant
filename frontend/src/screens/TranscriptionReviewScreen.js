@@ -63,6 +63,7 @@ export const TranscriptionReviewScreen = ({ route, navigation }) => {
 
   // Audio Playback State
   const [sound, setSound] = useState(null);
+  const soundRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackPosition, setPlaybackPosition] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
@@ -79,8 +80,9 @@ export const TranscriptionReviewScreen = ({ route, navigation }) => {
     loadAudioPlayer();
 
     return () => {
-      if (sound) {
-        sound.unloadAsync().catch(() => {});
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+        soundRef.current = null;
       }
     };
   }, [fullAudioUri]);
@@ -100,6 +102,7 @@ export const TranscriptionReviewScreen = ({ route, navigation }) => {
       );
 
       setSound(newSound);
+      soundRef.current = newSound;
       if (soundStatus.isLoaded) {
         setPlaybackDuration(soundStatus.durationMillis || 0);
       }

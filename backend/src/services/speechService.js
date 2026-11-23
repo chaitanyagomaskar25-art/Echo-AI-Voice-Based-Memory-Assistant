@@ -156,6 +156,7 @@ class SpeechService {
       headers: {
         Authorization: `Bearer ${apiKey}`,
       },
+      signal: AbortSignal.timeout(20000), // 20-second timeout
       body: formData,
     });
 

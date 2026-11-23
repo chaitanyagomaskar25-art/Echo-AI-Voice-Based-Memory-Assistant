@@ -1,6 +1,14 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const User = require('../models/User');
+const Memory = require('../models/Memory');
+const Task = require('../models/Task');
+const Reminder = require('../models/Reminder');
+const NotificationPreference = require('../models/NotificationPreference');
+const Conversation = require('../models/Conversation');
+const Recap = require('../models/Recap');
 
 /**
  * Generate signed JWT Token for authenticated user
@@ -298,6 +306,98 @@ exports.resetPassword = async (req, res, next) => {
         profileSetupCompleted: user.profileSetupCompleted,
         createdAt: user.createdAt,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Permanently delete user account and all personal voice memories (GDPR compliance)
+// @route   DELETE /api/auth/account
+// @access  Protected
+exports.deleteAccount = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+
+    // 1. Delete physical audio files from uploads directory
+    const userMemories = await Memory.find({ user: userId });
+    let deletedFilesCount = 0;
+    for (const mem of userMemories) {
+      if (mem.audioUrl) {
+        const filePath = path.join(__dirname, '../../', mem.audioUrl.replace(/^\//, ''));
+        if (fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+            deletedFilesCount++;
+          } catch (e) {
+            console.warn(`[DeleteAccount] Could not unlink ${filePath}:`, e.message);
+          }
+        }
+      }
+    }
+
+    // 2. Cascade delete all user documents
+    const [memoriesRes, tasksRes, remindersRes, prefsRes, convsRes, recapsRes] = await Promise.all([
+      Memory.deleteMany({ user: userId }),
+      Task.deleteMany({ user: userId }),
+      Reminder.deleteMany({ user: userId }),
+      NotificationPreference.deleteMany({ user: userId }),
+      Conversation.deleteMany({ user: userId }),
+      Recap.deleteMany({ user: userId }),
+    ]);
+
+    // 3. Delete user document
+    await User.findByIdAndDelete(userId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Account and all associated voice memories, tasks, and data permanently deleted.',
+      details: {
+        deletedFilesCount,
+        deletedMemoriesCount: memoriesRes.deletedCount,
+        deletedTasksCount: tasksRes.deletedCount,
+        deletedRemindersCount: remindersRes.deletedCount,
+        deletedConversationsCount: convsRes.deletedCount,
+        deletedRecapsCount: recapsRes.deletedCount,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Clear all user memories, tasks and history while keeping user account active
+// @route   DELETE /api/auth/data
+// @access  Protected
+exports.clearUserData = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+
+    // Delete audio files on disk
+    const userMemories = await Memory.find({ user: userId });
+    for (const mem of userMemories) {
+      if (mem.audioUrl) {
+        const filePath = path.join(__dirname, '../../', mem.audioUrl.replace(/^\//, ''));
+        if (fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch (e) {}
+        }
+      }
+    }
+
+    // Cascade clear documents
+    await Promise.all([
+      Memory.deleteMany({ user: userId }),
+      Task.deleteMany({ user: userId }),
+      Reminder.deleteMany({ user: userId }),
+      Conversation.deleteMany({ user: userId }),
+      Recap.deleteMany({ user: userId }),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      message: 'All personal voice memories, tasks, reminders, and conversations have been reset.',
     });
   } catch (error) {
     next(error);

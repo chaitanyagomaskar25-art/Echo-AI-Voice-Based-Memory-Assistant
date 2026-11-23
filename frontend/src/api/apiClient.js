@@ -39,7 +39,16 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response.data,
   (error) => {
+    // If 401 Unauthorized received, token may be expired
+    if (error.response?.status === 401) {
+      const code = error.response?.data?.error?.code;
+      if (code === 'TOKEN_EXPIRED' || code === 'INVALID_TOKEN' || code === 'USER_NOT_FOUND') {
+        secureStorage.clearAll().catch(() => {});
+      }
+    }
+
     const errorMsg =
+      error.response?.data?.error?.message ||
       error.response?.data?.message ||
       error.message ||
       'Network request failed. Is the backend server running?';

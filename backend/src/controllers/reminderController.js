@@ -3,12 +3,15 @@ const Task = require('../models/Task');
 const Memory = require('../models/Memory');
 const NotificationPreference = require('../models/NotificationPreference');
 
-// List reminders (sorted upcoming first)
+// List reminders (sorted upcoming first, isolated by user)
 exports.listReminders = async (req, res, next) => {
   try {
     const { status = 'all', sourceType } = req.query;
 
     const query = {};
+    if (req.user) {
+      query.user = req.user._id;
+    }
     if (status === 'scheduled') {
       query.isCompleted = false;
     } else if (status === 'completed') {
@@ -23,8 +26,9 @@ exports.listReminders = async (req, res, next) => {
       .populate('memory', 'title category createdAt')
       .sort({ isCompleted: 1, remindAt: 1 });
 
-    const scheduledCount = await Reminder.countDocuments({ isCompleted: false });
-    const completedCount = await Reminder.countDocuments({ isCompleted: true });
+    const countQuery = req.user ? { user: req.user._id } : {};
+    const scheduledCount = await Reminder.countDocuments({ ...countQuery, isCompleted: false });
+    const completedCount = await Reminder.countDocuments({ ...countQuery, isCompleted: true });
 
     res.json({
       success: true,
@@ -63,7 +67,10 @@ exports.createReminder = async (req, res, next) => {
 
     // Duplicate Prevention: Check if active reminder already exists for the same task
     if (taskId) {
-      const existing = await Reminder.findOne({ task: taskId, isCompleted: false });
+      const dupQuery = { task: taskId, isCompleted: false };
+      if (req.user) dupQuery.user = req.user._id;
+
+      const existing = await Reminder.findOne(dupQuery);
       if (existing) {
         existing.title = title.trim();
         existing.note = note ? note.trim() : '';
@@ -94,6 +101,7 @@ exports.createReminder = async (req, res, next) => {
       memory: memoryId || null,
       notificationId: notificationId || '',
       status: 'scheduled',
+      user: req.user ? req.user._id : null,
     });
 
     const saved = await reminder.save();
@@ -122,13 +130,16 @@ exports.completeReminder = async (req, res, next) => {
     if (!reminder) {
       return res.status(404).json({ success: false, message: 'Reminder not found' });
     }
+    if (req.user && reminder.user && String(reminder.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to modify this reminder' });
+    }
 
     reminder.isCompleted = true;
     reminder.completedAt = new Date();
     reminder.status = 'completed';
     await reminder.save();
 
-    // If linked to a task, optionally sync task completion
+    // If linked to a task, sync task completion
     if (reminder.task) {
       await Task.findByIdAndUpdate(reminder.task, {
         isCompleted: true,
@@ -154,6 +165,9 @@ exports.snoozeReminder = async (req, res, next) => {
     const reminder = await Reminder.findById(req.params.id);
     if (!reminder) {
       return res.status(404).json({ success: false, message: 'Reminder not found' });
+    }
+    if (req.user && reminder.user && String(reminder.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to snooze this reminder' });
     }
 
     const snoozeDurationMs = Number(minutes) * 60 * 1000;
@@ -192,6 +206,9 @@ exports.rescheduleReminder = async (req, res, next) => {
     if (!reminder) {
       return res.status(404).json({ success: false, message: 'Reminder not found' });
     }
+    if (req.user && reminder.user && String(reminder.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to reschedule this reminder' });
+    }
 
     reminder.remindAt = new Date(remindAt);
     if (timezone) reminder.timezone = timezone;
@@ -214,10 +231,15 @@ exports.rescheduleReminder = async (req, res, next) => {
 // Delete / Cancel reminder
 exports.deleteReminder = async (req, res, next) => {
   try {
-    const reminder = await Reminder.findByIdAndDelete(req.params.id);
+    const reminder = await Reminder.findById(req.params.id);
     if (!reminder) {
       return res.status(404).json({ success: false, message: 'Reminder not found' });
     }
+    if (req.user && reminder.user && String(reminder.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to delete this reminder' });
+    }
+
+    await reminder.deleteOne();
 
     res.json({
       success: true,
@@ -230,12 +252,15 @@ exports.deleteReminder = async (req, res, next) => {
   }
 };
 
-// Get notification preferences
+// Get notification preferences (user-scoped)
 exports.getPreferences = async (req, res, next) => {
   try {
-    let prefs = await NotificationPreference.findOne();
+    const query = req.user ? { user: req.user._id } : {};
+    let prefs = await NotificationPreference.findOne(query);
     if (!prefs) {
-      prefs = await NotificationPreference.create({});
+      prefs = await NotificationPreference.create({
+        user: req.user ? req.user._id : null,
+      });
     }
     res.json({ success: true, data: prefs });
   } catch (error) {
@@ -243,12 +268,15 @@ exports.getPreferences = async (req, res, next) => {
   }
 };
 
-// Update notification preferences
+// Update notification preferences (user-scoped)
 exports.updatePreferences = async (req, res, next) => {
   try {
-    let prefs = await NotificationPreference.findOne();
+    const query = req.user ? { user: req.user._id } : {};
+    let prefs = await NotificationPreference.findOne(query);
     if (!prefs) {
-      prefs = new NotificationPreference();
+      prefs = new NotificationPreference({
+        user: req.user ? req.user._id : null,
+      });
     }
 
     const {

@@ -8,7 +8,12 @@ exports.listTasks = async (req, res, next) => {
     const { section = 'all', priority, category, memoryId } = req.query;
     const now = new Date();
 
-    const allTasks = await Task.find(memoryId ? { memory: memoryId } : {})
+    const query = memoryId ? { memory: memoryId } : {};
+    if (req.user) {
+      query.user = req.user._id;
+    }
+
+    const allTasks = await Task.find(query)
       .populate('memory', 'title category createdAt transcript originalTranscript')
       .sort({ isCompleted: 1, dueDate: 1, createdAt: -1 });
 
@@ -77,6 +82,9 @@ exports.getTaskById = async (req, res, next) => {
     if (!task) {
       return res.status(404).json({ success: false, message: 'Task not found' });
     }
+    if (req.user && task.user && String(task.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view this task' });
+    }
     res.json({ success: true, data: task });
   } catch (error) {
     next(error);
@@ -104,6 +112,7 @@ exports.createTask = async (req, res, next) => {
       isCompleted: false,
       dateConfirmed: true,
       hasAmbiguousDate: false,
+      user: req.user ? req.user._id : null,
     });
 
     const saved = await task.save();
@@ -126,6 +135,9 @@ exports.updateTask = async (req, res, next) => {
     const task = await Task.findById(req.params.id);
     if (!task) {
       return res.status(404).json({ success: false, message: 'Task not found' });
+    }
+    if (req.user && task.user && String(task.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to modify this task' });
     }
 
     if (title && title.trim()) task.title = title.trim();
@@ -153,6 +165,9 @@ exports.toggleComplete = async (req, res, next) => {
     if (!task) {
       return res.status(404).json({ success: false, message: 'Task not found' });
     }
+    if (req.user && task.user && String(task.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to modify this task' });
+    }
 
     task.isCompleted = !task.isCompleted;
     task.completedAt = task.isCompleted ? new Date() : null;
@@ -178,6 +193,9 @@ exports.rescheduleTask = async (req, res, next) => {
     const task = await Task.findById(req.params.id);
     if (!task) {
       return res.status(404).json({ success: false, message: 'Task not found' });
+    }
+    if (req.user && task.user && String(task.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to reschedule this task' });
     }
 
     task.dueDate = dueDate ? new Date(dueDate) : null;
@@ -218,6 +236,9 @@ exports.confirmAmbiguousDate = async (req, res, next) => {
     if (!task) {
       return res.status(404).json({ success: false, message: 'Task not found' });
     }
+    if (req.user && task.user && String(task.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to modify this task' });
+    }
 
     task.hasAmbiguousDate = false;
     task.dateConfirmed = true;
@@ -247,10 +268,15 @@ exports.confirmAmbiguousDate = async (req, res, next) => {
 // Delete task
 exports.deleteTask = async (req, res, next) => {
   try {
-    const task = await Task.findByIdAndDelete(req.params.id);
+    const task = await Task.findById(req.params.id);
     if (!task) {
       return res.status(404).json({ success: false, message: 'Task not found' });
     }
+    if (req.user && task.user && String(task.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to delete this task' });
+    }
+
+    await task.deleteOne();
 
     res.json({
       success: true,
@@ -269,6 +295,9 @@ exports.extractFromMemory = async (req, res, next) => {
     if (!memory) {
       return res.status(404).json({ success: false, message: 'Memory not found' });
     }
+    if (req.user && memory.user && String(memory.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to extract tasks from this memory' });
+    }
 
     const extracted = extractTasksFromTranscript(memory.originalTranscript || memory.transcript, {
       memoryId: memory._id,
@@ -279,6 +308,7 @@ exports.extractFromMemory = async (req, res, next) => {
     for (const t of extracted) {
       const existing = await Task.findOne({ title: t.title, memory: memory._id });
       if (!existing) {
+        t.user = req.user ? req.user._id : null;
         const created = await Task.create(t);
         await created.populate('memory', 'title category createdAt');
         createdTasks.push(created);

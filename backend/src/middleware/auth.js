@@ -1,6 +1,9 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+/**
+ * Protect middleware: enforces authenticated session with valid JWT
+ */
 const protect = async (req, res, next) => {
   let token;
 
@@ -14,7 +17,11 @@ const protect = async (req, res, next) => {
   if (!token) {
     return res.status(401).json({
       success: false,
-      message: 'Not authorized to access this resource. No token provided.',
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'Authentication required. No Bearer token provided in Authorization header.',
+      },
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -28,7 +35,11 @@ const protect = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'The user belonging to this token no longer exists.',
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'The user account associated with this token no longer exists.',
+        },
+        timestamp: new Date().toISOString(),
       });
     }
 
@@ -37,14 +48,25 @@ const protect = async (req, res, next) => {
   } catch (err) {
     return res.status(401).json({
       success: false,
-      message: 'Not authorized. Token verification failed or expired.',
+      error: {
+        code: err.name === 'TokenExpiredError' ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
+        message:
+          err.name === 'TokenExpiredError'
+            ? 'Authentication session expired. Please sign in again.'
+            : 'Authentication failed. Invalid token signature.',
+      },
+      timestamp: new Date().toISOString(),
     });
   }
 };
 
-// Optional auth: attaches req.user if token is present and valid, but does not reject if missing
+/**
+ * Optional Auth middleware: attaches req.user if a valid token is provided.
+ * If no token is provided or invalid, req.user remains null without aborting the request.
+ */
 const optionalAuth = async (req, res, next) => {
   let token;
+
   if (
     req.headers.authorization &&
     req.headers.authorization.startsWith('Bearer')
@@ -58,12 +80,29 @@ const optionalAuth = async (req, res, next) => {
         token,
         process.env.JWT_SECRET || 'echo_voice_memory_jwt_secret_key_2026_super_secure'
       );
-      req.user = await User.findById(decoded.id).select('-password');
+      const user = await User.findById(decoded.id).select('-password');
+      if (user) {
+        req.user = user;
+      }
     } catch (err) {
-      // Ignored for optional auth
+      // Ignored for optional authentication
     }
   }
+
   next();
 };
 
-module.exports = { protect, optionalAuth };
+/**
+ * Authorize Resource Ownership middleware generator
+ * Ensures the resource's user ID matches the authenticated user ID.
+ */
+const checkOwnership = (resourceUserId, currentUserId) => {
+  if (!resourceUserId || !currentUserId) return false;
+  return resourceUserId.toString() === currentUserId.toString();
+};
+
+module.exports = {
+  protect,
+  optionalAuth,
+  checkOwnership,
+};

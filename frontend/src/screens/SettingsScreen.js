@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import { setServerUrl, setBackendConnected } from '../store/slices/uiSlice';
-import { logoutUser } from '../store/slices/authSlice';
+import { logoutUser, deleteUserAccount, clearAllUserData } from '../store/slices/authSlice';
 import {
   fetchNotificationPreferences,
   updateNotificationPreferences,
@@ -180,6 +180,50 @@ export const SettingsScreen = ({ navigation }) => {
     );
   };
 
+  const handleClearAllData = () => {
+    Alert.alert(
+      'Reset All Voice Memories',
+      'Are you sure you want to permanently clear all your voice memories, tasks, reminders, and chat history? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset My Data',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await dispatch(clearAllUserData()).unwrap();
+              Alert.alert('Data Cleared', 'Your memories, tasks, and conversation history have been reset.');
+            } catch (err) {
+              Alert.alert('Error', err || 'Could not reset data.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Permanently Delete Account',
+      'Are you sure you want to delete your Echo account, all audio files, memories, and personal data? You will be signed out immediately.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Permanently Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await dispatch(deleteUserAccount()).unwrap();
+              Alert.alert('Account Deleted', 'Your account and all personal voice memories have been permanently deleted.');
+            } catch (err) {
+              Alert.alert('Error', err || 'Could not delete account.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const activeReminders = reminders.filter((r) => !r.isCompleted);
 
   return (
@@ -251,12 +295,42 @@ export const SettingsScreen = ({ navigation }) => {
 
             <Button
               title="Sign Out of Echo"
-              variant="danger"
+              variant="secondary"
               size="sm"
               icon="log-out-outline"
               onPress={handleSignOut}
               style={{ marginTop: spacing.md }}
             />
+          </Card>
+        )}
+
+        {/* Account & Data Privacy (GDPR Compliance) */}
+        {user && (
+          <Card style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Ionicons name="shield-checkmark-outline" size={18} color={colors.primaryLight} style={{ marginRight: 8 }} />
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Account & Data Privacy</Text>
+            </View>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>
+              Control your personal voice memories and exercise GDPR data deletion rights.
+            </Text>
+
+            <View style={{ flexDirection: 'column', gap: spacing.sm, marginTop: spacing.sm }}>
+              <Button
+                title="Reset All My Voice Memories"
+                variant="outline"
+                size="sm"
+                icon="trash-bin-outline"
+                onPress={handleClearAllData}
+              />
+              <Button
+                title="Delete Account & Audio Files"
+                variant="danger"
+                size="sm"
+                icon="warning-outline"
+                onPress={handleDeleteAccount}
+              />
+            </View>
           </Card>
         )}
 

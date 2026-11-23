@@ -84,4 +84,10 @@ TaskSchema.virtual('section').get(function () {
 TaskSchema.set('toJSON', { virtuals: true });
 TaskSchema.set('toObject', { virtuals: true });
 
+// High performance compound indexes for task queries
+TaskSchema.index({ user: 1, isCompleted: 1, dueDate: 1 });
+TaskSchema.index({ user: 1, memory: 1 });
+TaskSchema.index({ user: 1, category: 1 });
+TaskSchema.index({ user: 1, createdAt: -1 });
+
 module.exports = mongoose.model('Task', TaskSchema);

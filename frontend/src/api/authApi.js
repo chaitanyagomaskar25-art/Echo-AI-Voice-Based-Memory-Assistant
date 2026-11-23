@@ -42,6 +42,20 @@ export const authApi = {
   async resetPassword(data) {
     return apiClient.post('/auth/reset-password', data);
   },
+
+  /**
+   * Permanently delete user account and all personal voice memories (GDPR)
+   */
+  async deleteAccount() {
+    return apiClient.delete('/auth/account');
+  },
+
+  /**
+   * Clear all personal memory data while preserving account
+   */
+  async clearUserData() {
+    return apiClient.delete('/auth/data');
+  },
 };
 
 export default authApi;

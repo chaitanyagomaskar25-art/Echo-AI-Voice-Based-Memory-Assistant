@@ -34,7 +34,11 @@ exports.uploadAudio = async (req, res, next) => {
 
     // Deduplication check: Avoid duplicate memories when syncing offline recordings
     if (offlineKey) {
-      const existing = await Memory.findOne({ clientLocalId: offlineKey });
+      const dupQuery = { clientLocalId: offlineKey };
+      if (req.user) {
+        dupQuery.user = req.user._id;
+      }
+      const existing = await Memory.findOne(dupQuery);
       if (existing) {
         return res.status(200).json({
           success: true,
@@ -175,6 +179,9 @@ exports.retryTranscription = async (req, res, next) => {
     if (!memory) {
       return res.status(404).json({ success: false, message: 'Memory not found.' });
     }
+    if (req.user && memory.user && String(memory.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to retry transcription for this memory.' });
+    }
 
     if (!memory.audioUrl) {
       return res.status(400).json({ success: false, message: 'No audio recording associated with this memory.' });
@@ -245,6 +252,9 @@ exports.updateTranscript = async (req, res, next) => {
     const memory = await Memory.findById(id);
     if (!memory) {
       return res.status(404).json({ success: false, message: 'Memory not found.' });
+    }
+    if (req.user && memory.user && String(memory.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to retry transcription for this memory.' });
     }
 
     // Re-enrich with AI
